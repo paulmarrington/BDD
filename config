@@ -1,0 +1,6 @@
+declare -- framework="Unity"
+declare -- packages=""
+declare -- local_packages="Askowl/Able Askowl/CustomAssets Askowl/Fibers"
+declare -- quote_count="50"
+declare -- fact_count="100"
+declare -- joke_count="200"
