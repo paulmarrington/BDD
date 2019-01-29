@@ -1,0 +1,16 @@
+{
+    "name": "BDD",
+    "references": [
+        "Able",
+        "AbleEditor",
+        "CustomAssets"
+    ],
+    "optionalUnityReferences": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": []
+}
