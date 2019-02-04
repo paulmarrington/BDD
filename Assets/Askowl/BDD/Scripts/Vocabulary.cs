@@ -1,0 +1,57 @@
+﻿using System.Collections.Generic;
+using System.Linq;
+using CustomAsset;
+using UnityEngine;
+/// <a href=""></a> //#TBD#//
+[CreateAssetMenu(menuName = "BDD/Vocabulary", fileName = "Vocabulary")]
+public class Vocabulary : Base {
+  [SerializeField] private string[] feature         = default;
+  [SerializeField] private string[] rule            = default;
+  [SerializeField] private string[] scenario        = default;
+  [SerializeField] private string[] step            = default;
+  [SerializeField] private string[] background      = default;
+  [SerializeField] private string[] scenarioOutline = default;
+  [SerializeField] private string[] examples        = default;
+
+  /// <a href=""></a> //#TBD#//
+  public enum Keywords {
+    // ReSharper disable MissingXmlDoc
+    Feature, Rule, Scenario, Step, Background, ScenarioOutline, Examples, DocString, DataTable, Tag, Comments, Unknown
+    // ReSharper restore MissingXmlDoc
+  }
+
+  private Dictionary<string, Keywords> keywords;
+
+  protected override void OnEnable() {
+    keywords = new Dictionary<string, Keywords>();
+    void add(string[] keywordList, Keywords keywordType) {
+      if (keywordList == null) return;
+      for (int i = 0; i < keywordList.Length; i++) {
+        keywords[keywordList[i]] = keywordType;
+      }
+    }
+    add(feature,         Keywords.Feature);
+    add(rule,            Keywords.Rule);
+    add(scenario,        Keywords.Scenario);
+    add(step,            Keywords.Step);
+    add(background,      Keywords.Background);
+    add(scenarioOutline, Keywords.ScenarioOutline);
+    add(examples,        Keywords.Examples);
+  }
+
+  /// <a href=""></a> //#TBD#//
+  public void Merge(Vocabulary other) => other.keywords.ToList().ForEach(x => keywords.Add(x.Key, x.Value));
+
+  /// <a href=""></a> //#TBD#//
+  public Keywords Keyword(string word) {
+    if (keywords.ContainsKey(word)) return keywords[word];
+    if (word.StartsWith(@"""""""")) return Keywords.DocString;
+    switch (word[0]) {
+      case '|': return Keywords.DataTable;
+      case '@': return Keywords.Tag;
+      case '#': return Keywords.Comments;
+      case '"': return ((word[1] == '"') && (word[2] == '"')) ? Keywords.DocString : Keywords.Unknown;
+      default:  return Keywords.Unknown;
+    }
+  }
+}

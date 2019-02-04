@@ -1,12 +1,14 @@
 {
-    "name": "BDD",
+    "name": "BddExamples",
     "references": [
-        "Able",
-        "AbleEditor",
         "CustomAssets",
-        "Fibers"
+        "BDD",
+        "Fibers",
+        "Able"
     ],
-    "optionalUnityReferences": [],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

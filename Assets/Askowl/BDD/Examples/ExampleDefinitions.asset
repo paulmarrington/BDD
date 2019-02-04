@@ -13,4 +13,9 @@ MonoBehaviour:
   m_Name: ExampleDefinitions
   m_EditorClassIdentifier: 
   description: 
+  vocabularies:
+  - {fileID: 11400000, guid: 20fe77311133848c0bc03cf2605153d6, type: 2}
+  gherkinDefinitions:
+  - {fileID: 11500000, guid: c98cf31549ca94be2aa42a9e06f2b492, type: 3}
+  - {fileID: 11500000, guid: 268a1749448764436b1759e42a35e80f, type: 3}
   output: 
