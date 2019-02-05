@@ -44,14 +44,7 @@ public class Vocabulary : Base {
 
   /// <a href=""></a> //#TBD#//
   public Keywords Keyword(string word) {
-    if (keywords.ContainsKey(word)) return keywords[word];
-    if (word.StartsWith(@"""""""")) return Keywords.DocString;
-    switch (word[0]) {
-      case '|': return Keywords.DataTable;
-      case '@': return Keywords.Tag;
-      case '#': return Keywords.Comments;
-      case '"': return ((word[1] == '"') && (word[2] == '"')) ? Keywords.DocString : Keywords.Unknown;
-      default:  return Keywords.Unknown;
-    }
+    if (string.IsNullOrWhiteSpace(word)) return Keywords.Unknown;
+    return keywords.ContainsKey(word) ? keywords[word] : Keywords.Unknown;
   }
 }

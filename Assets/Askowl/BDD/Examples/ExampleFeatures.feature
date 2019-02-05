@@ -1,3 +1,4 @@
+@basic
 Feature: Guess the word
   The word guess game is a turn-based game for two players.
   The Maker makes a word for the Breaker to guess. The game
@@ -13,6 +14,7 @@ Feature: Guess the word
     Given the Maker has started a game with the word "silky"
     When the Breaker joins the Maker's game
     Then the Breaker must guess a word with 5 characters
+
 
 Feature: Highlander
 
@@ -35,7 +37,8 @@ Feature: Highlander
 
   Example: Two -- Dead and Reborn as Phoenix
 
-Feature: Outlines
+  @outline
+  Feature: Outlines
 
   Scenario Outline: eating
     Given there are <start> cucumbers
@@ -47,10 +50,11 @@ Feature: Outlines
       | 12    | 5   | 7    |
       | 20    | 5   | 15   |
 
-Feature: Doc Strings and Data Tables
+  @docString @dataTable
+  Feature: Doc Strings and Data Tables
 
   Example: A Doc String
-  Given a blog post named "Random" with Markdown body
+    Given a blog post named "Random" with Markdown body
   """
   Some Title, Eh?
   ===============
@@ -59,8 +63,8 @@ Feature: Doc Strings and Data Tables
   """
 
   Example: A Data Table
-  Given the following users exist:
-  | name   | email              | twitter         |
-  | Aslak  | aslak@cucumber.io  | @aslak_hellesoy |
-  | Julien | julien@cucumber.io | @jbpros         |
-  | Matt   | matt@cucumber.io   | @mattwynne      |
+    Given the following users exist:
+      | name   | email              | twitter         |
+      | Aslak  | aslak@cucumber.io  | @aslak_hellesoy |
+      | Julien | julien@cucumber.io | @jbpros         |
+      | Matt   | matt@cucumber.io   | @mattwynne      |

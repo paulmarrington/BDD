@@ -2,13 +2,27 @@
 using Askowl.Gherkin;
 using CustomAsset;
 using NUnit.Framework;
+using UnityEngine;
 #if UNITY_EDITOR && BDD
 // ReSharper disable MissingXmlDoc
 
 public class ExampleDefinitions {
-  [Test] public void Go() {
+  [Test] public void Basic() {
     var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");
-    definitions.Run("Assets/Askowl/BDD/Examples/ExampleFeatures");
+    var results     = definitions.Run("Assets/Askowl/BDD/Examples/ExampleFeatures", "@basic");
+    Debug.Log(results);
+    Assert.IsTrue(definitions.Success);
+  }
+  [Test] public void Outline() {
+    var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");
+    var results     = definitions.Run("Assets/Askowl/BDD/Examples/ExampleFeatures", "@outline");
+    Debug.Log(results);
+    Assert.IsTrue(definitions.Success);
+  }
+  [Test] public void DataTable() {
+    var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");
+    var results     = definitions.Run("Assets/Askowl/BDD/Examples/ExampleFeatures", "@dataTable");
+    Debug.Log(results);
     Assert.IsTrue(definitions.Success);
   }
 }
