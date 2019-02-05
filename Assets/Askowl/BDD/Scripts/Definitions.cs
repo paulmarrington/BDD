@@ -28,9 +28,10 @@ namespace Askowl.Gherkin {
 
     private struct Definition {
       public Regex      regex;
-      public MemberInfo memberInfo;
+      public MethodInfo methodInfo;
+      public Object     container;
     }
-    private List<Definition> list = new List<Definition>();
+    private readonly List<Definition> definitionList = new List<Definition>();
 
     protected override void OnEnable() { // Iterate through all the methods of the class.
       base.OnEnable();
@@ -38,7 +39,8 @@ namespace Askowl.Gherkin {
         foreach (MethodInfo mInfo in definitions.GetType().GetMethods()) {
           foreach (Attribute attr in Attribute.GetCustomAttributes(mInfo)) {
             if (attr.GetType() == typeof(StepAttribute)) {
-              list.Add(new Definition {regex = ((StepAttribute) attr).Definition, memberInfo = mInfo});
+              var regex = ((StepAttribute) attr).Definition;
+              definitionList.Add(new Definition {regex = regex, methodInfo = mInfo, container = definitions});
             }
           }
         }
@@ -62,22 +64,22 @@ namespace Askowl.Gherkin {
       };
     }
 
-    struct Line {
+    private struct GherkinLine {
       public string              text;
       public string              indent;
       public string              keyword;
       public Vocabulary.Keywords state;
       public bool                colon;
       public string              statement;
+      public object[]            parameters;
     }
-    private List<Line>          lines;
-    private StringBuilder       builder;
-    private Vocabulary.Keywords state;
-    private int                 lineNumber;
-    private Line                line;
-    private string              step;
-    private int                 docStringStart, docStringEnd;
-    private string              currentColour = "black";
+    private List<GherkinLine> gherkinLines;
+    private StringBuilder     builder;
+    private int               lineNumber;
+    private GherkinLine       gherkinLine, step;
+    private RangeInt          docString  = new RangeInt();
+    private RangeInt          background = new RangeInt();
+    private RangeInt          outline    = new RangeInt();
 
     /// <a href=""></a> //#TBD#//
     public void Run(string featureFileName) {
@@ -87,19 +89,20 @@ namespace Askowl.Gherkin {
       output = builder.ToString();
     }
 
-    private bool ReadFile(string name) {
-      lines = new List<Line>();
-      if (!name.Contains(".")) name += ".feature";
+    private bool ReadFile(string fileName) {
+      gherkinLines = new List<GherkinLine>();
+      if (!fileName.Contains(".")) fileName += ".feature";
       try {
-        using (var file = new StreamReader(name)) {
+        using (var file = new StreamReader(fileName)) {
           string text;
           while ((text = file.ReadLine()) != null) {
             var match = gherkinRegex.Match(text);
-            lines.Append(
-              new Line {
+            gherkinLines.Append(
+              new GherkinLine {
                 keyword = match.Groups[2].Value, statement = match.Groups[4].Value
-              , indent  = match.Groups[1].Value, colon     = match.Groups[3].Length != 0, text = text
+              , indent  = match.Groups[1].Value, colon     = match.Groups[3].Length != 0
               , state   = vocabulary.Keyword(match.Groups[2].Value)
+              , text    = text, parameters = new object[2]
               });
           }
         }
@@ -112,66 +115,148 @@ namespace Askowl.Gherkin {
     private static readonly Regex gherkinRegex = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
 
     private void Process() {
-      state = Vocabulary.Keywords.Unknown;
-      for (lineNumber = 0; lineNumber < lines.Count; lineNumber++) {
-        line = lines[lineNumber];
-        actions[line.state]();
+      for (lineNumber = 0; lineNumber < gherkinLines.Count; lineNumber++) {
+        gherkinLine = gherkinLines[lineNumber];
+        actions[gherkinLine.state]();
       }
     }
-
     private Dictionary<Vocabulary.Keywords, Action> actions;
 
-    private void ChangeState() {
-      if (line.colon) {
-        FillStep();
-        state = line.state;
-        PrintLine();
-      } else {
-        PrintBaseLine();
-      }
-    }
+    private void Unknown() => PrintBaseLine(lineNumber);
 
-    private void Feature() => ChangeState();
-    private void Rule()    => ChangeState();
+    private void Feature() {
+      background.length = outline.length = 0;
+      PrintLine(lineNumber);
+      while (NotColon(++lineNumber)) PrintBaseLine(lineNumber);
+    }
+    private void Rule() => Feature();
+
+    private void Background() => LoadSteps(background);
 
     private void Scenario() {
-      if (line.colon) {
-        FillStep();
-        ChangeState();
-      } else if (!string.IsNullOrEmpty(line.keyword)) {
-        Step();
-      } else {
-        PrintBaseLine();
-      }
-    }
-    private void Step() {
-      FillStep();
-      state = line.state;
-      step  = line.statement;
-    }
-    private void Background()      { }
-    private void ScenarioOutline() { }
-    private void Examples()        { }
-    private void DocString()       { }
-    private void DataTable()       { }
-    private void Tag()             { }
-    private void Comments()        { }
-    private void Unknown()         { }
-
-    private void FillStep() {
-      string docString = default;
-      if (InDocString()) {
-        var      left           = lines[docStringStart].indent.Length;
-        string[] docStringLines = new string[docStringEnd - docStringStart - 2];
-        for (int i = 0; i < docStringLines.Length; i++) {
-          docStringLines[i] = lines[docStringStart + i + 1].text.Substring(left);
+      PrintLine(lineNumber);
+      RunBackground();
+      while (NotColon(++lineNumber)) {
+        if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
+          Step();
+          RunStep();
+        } else {
+          PrintBaseLine(lineNumber);
         }
-        docString = string.Join("\n", docStringLines);
       }
-      Debug.Log($"*** FillStep '{step}' with '{docString}'"); //#DM#// 
     }
 
-    private void PrintLine() {
+    private void Step() {
+      step = gherkinLines[lineNumber];
+      PrintLine(lineNumber);
+      lineNumber += DocString(lineNumber);
+    }
+
+    private void DocString() => PrintLine(lineNumber);
+
+    private void Comments() => PrintBaseLine(lineNumber, "silver");
+
+    private void ScenarioOutline() => LoadSteps(outline);
+
+    private void Examples() {
+      PrintLine(lineNumber);
+      while ((++lineNumber < gherkinLines.Count) && NotColon(lineNumber)) {
+        if (gherkinLines[lineNumber].state == Vocabulary.Keywords.DataTable) {
+          var headings = ParseDataTableLine();
+          while ((++lineNumber < gherkinLines.Count) && NotColon(lineNumber)) {
+            if (gherkinLines[lineNumber].state == Vocabulary.Keywords.DataTable) {
+              var data = ParseDataTableLine();
+              for (int i = 0; i < outline.length; i++) {
+                step = gherkinLines[i];
+                var statement = step.statement;
+                for (int j = 0; j < headings.Count; j++) {
+                  statement = statement.Replace($"<{headings[j]}>", data[j]);
+                }
+                i += DocString(i);
+                RunStep(statement);
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    private void DataTable() {
+      PrintLine(lineNumber);
+      Error("Hanging Data Table line");
+    }
+    private void Tag() {
+      PrintLine(lineNumber);
+      Error("Tags are not supported");
+    }
+
+    private List<string> ParseDataTableLine() =>
+      gherkinLines[lineNumber].text.Split('|').Skip(1).Select(s => s.Trim()).ToList();
+
+    private void LoadSteps(RangeInt to) {
+      to.start = lineNumber + 1;
+      PrintLine(lineNumber);
+      while (NotColon(++lineNumber)) {
+        if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
+          Step();
+        } else {
+          PrintBaseLine(lineNumber, "grey");
+        }
+      }
+      to.length = lineNumber - to.start;
+    }
+
+    private int DocString(int at) {
+      if (gherkinLines[at + 1].state != Vocabulary.Keywords.DocString) return default;
+      PrintLine(at);
+      var left = gherkinLines[++at].indent.Length;
+      PrintLine(at);
+      var start = ++at;
+      while (gherkinLines[at].state != Vocabulary.Keywords.DocString) at++;
+      string[] docStringLines = new string[at - start];
+      for (int i = 0; i < docStringLines.Length; i++) {
+        docStringLines[i] = gherkinLines[start + i].text.Substring(left);
+        PrintBaseLine(start + i);
+      }
+      PrintLine(at);
+      step.parameters[1] = string.Join("\n", docStringLines);
+      return at;
+    }
+
+    private bool NotColon(int lineNo) {
+      if (lineNo >= gherkinLines.Count) return false;
+      var isColon = gherkinLines[lineNo].colon;
+      if (isColon) lineNumber--;
+      return !isColon;
+    }
+
+    private void RunStep(string statement = null) {
+      if (statement == null) statement = step.statement;
+      for (int i = 0; i < definitionList.Count; i++) {
+        var match = definitionList[i].regex.Match(statement);
+        if (match.Success) {
+          step.parameters[0] = match;
+          definitionList[i].methodInfo.Invoke(definitionList[i].container, step.parameters);
+          return;
+        }
+      }
+      Error("No matching definition");
+    }
+
+    private void RunBackground() {
+      for (int i = 0; i < background.length; i++) {
+        step =  gherkinLines[i];
+        i    += DocString(i);
+        RunStep();
+      }
+    }
+
+    private void Error(string message) =>
+      builder.AppendLine($"{step.indent}<color=red>^^^^^^ {message} ^^^^^^</color>");
+
+    private void PrintLine(int at) {
+      var line = gherkinLines[at];
       if (line.colon) {
         builder.Append(line.indent).Append("<color=navy>").Append(line.keyword).Append(":</color> <color=blue>")
                .Append(line.statement).Append("</color>\n");
@@ -181,10 +266,8 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private void PrintBaseLine() =>
-      builder.Append($"<color={currentColour}>").Append(line.text).AppendLine("</color>");
-
-    private bool InDocString() => (docStringEnd - docStringEnd) >= 2;
+    private void PrintBaseLine(int at, string colour = "black") =>
+      builder.Append($"<color={colour}>").Append(gherkinLines[at].text).AppendLine("</color>");
   }
 
   /// <a href=""></a> //#TBD#//
