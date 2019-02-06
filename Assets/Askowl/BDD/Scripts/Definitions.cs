@@ -8,15 +8,15 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using CustomAsset;
+using UnityEditor;
 using UnityEngine;
-using Object = UnityEngine.Object;
 
 namespace Askowl.Gherkin {
   /// <a href="https://docs.cucumber.io/gherkin/reference/"></a> //#TBD#//
   [CreateAssetMenu(menuName = "BDD/Definitions", fileName = "Definitions")]
   public class Definitions : Manager {
     [SerializeField] private Vocabulary[] vocabularies       = default;
-    [SerializeField] private Object[]     gherkinDefinitions = default;
+    [SerializeField] private MonoScript[] gherkinDefinitions = default;
 
     /// <a href=""></a> //#TBD#//
     [NonSerialized] public bool Success;
@@ -25,21 +25,31 @@ namespace Askowl.Gherkin {
     private Vocabulary vocabulary;
 
     private struct Definition {
-      public Regex      regex;
-      public MethodInfo methodInfo;
-      public Object     container;
+      public Regex           regex;
+      public MethodInfo      methodInfo;
+      public object          container;
+      public ParameterInfo[] parameters;
+      public Type[]          parameterTypes;
     }
     private readonly List<Definition> definitionList = new List<Definition>();
 
     protected override void OnEnable() { // Iterate through all the methods of the class.
       base.OnEnable();
-      foreach (Object definitions in gherkinDefinitions) {
-        Debug.Log($"*** OnEnable '{definitions.GetType()}'"); //#DM#//
-        foreach (MethodInfo mInfo in definitions.GetType().GetMethods()) {
+      foreach (MonoScript definitions in gherkinDefinitions) {
+        var    type      = definitions.GetClass();
+        object container = null;
+        foreach (MethodInfo mInfo in type.GetMethods()) {
           foreach (Attribute attr in Attribute.GetCustomAttributes(mInfo)) {
             if (attr.GetType() == typeof(StepAttribute)) {
-              var regex = ((StepAttribute) attr).Definition;
-              definitionList.Add(new Definition {regex = regex, methodInfo = mInfo, container = definitions});
+              var regex                        = ((StepAttribute) attr).Definition;
+              if (container == null) container = Activator.CreateInstance(type);
+              var parameters                   = mInfo.GetParameters();
+              var parameterTypes               = parameters.ToList().Select(m => m.GetType()).ToArray();
+              definitionList.Add(
+                new Definition {
+                  methodInfo     = mInfo, regex = regex, container = container, parameters = parameters
+                , parameterTypes = parameterTypes
+                });
             }
           }
         }
@@ -61,7 +71,6 @@ namespace Askowl.Gherkin {
       , {Vocabulary.Keywords.Tag, Tag}
       , {Vocabulary.Keywords.Unknown, Unknown}
       };
-      featureTags = unassignedTags = scenarioTags = "";
     }
     #endregion
 
@@ -83,16 +92,14 @@ namespace Askowl.Gherkin {
     private GherkinLine       step;
     private RangeInt          background = new RangeInt();
     private RangeInt          outline    = new RangeInt();
-    private string            featureTags, scenarioTags, unassignedTags;
-    private string[]          inclusionTags;
     #endregion
 
     #region Processing
     /// <a href=""></a> //#TBD#//
-    public string Run(string featureFileName, string tagsToInclude = "") {
+    public string Run(string featureFileName) {
       builder = new StringBuilder();
       Success = true;
-      if (ReadFile(featureFileName)) Process(tagsToInclude);
+      if (ReadFile(featureFileName)) Process();
       return builder.ToString();
     }
 
@@ -108,7 +115,7 @@ namespace Askowl.Gherkin {
               new GherkinLine {
                 keyword = match.Groups[2].Value, statement = match.Groups[4].Value
               , indent  = match.Groups[1].Value, colon     = match.Groups[3].Length != 0
-              , state   = GherkinSyntax(match.Groups[2].Value, text, match.Groups[1].Value)
+              , state   = GherkinSyntax(match.Groups[2].Value, text)
               , text    = text, parameters = new object[3]
               });
           }
@@ -121,11 +128,9 @@ namespace Askowl.Gherkin {
     }
     private static readonly Regex gherkinRegex = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
 
-    private void Process(string tagsToInclude) {
-      inclusionTags = tagsToInclude.Trim().Split(' ');
+    private void Process() {
       for (lineNumber = 0; lineNumber < gherkinLines.Count; lineNumber++) {
         step = gherkinLines[lineNumber];
-        if (step.colon) scenarioTags = "";
         actions[step.state]();
       }
     }
@@ -136,8 +141,6 @@ namespace Askowl.Gherkin {
     private void Unknown() => PrintBaseLine(lineNumber);
 
     private void Feature() {
-      featureTags       = unassignedTags;
-      unassignedTags    = "";
       background.length = outline.length = 0;
       PrintLine(lineNumber);
       while (NotColon(++lineNumber)) PrintBaseLine(lineNumber);
@@ -147,8 +150,6 @@ namespace Askowl.Gherkin {
     private void Background() => LoadSteps(background);
 
     private void Scenario() {
-      scenarioTags   = unassignedTags;
-      unassignedTags = "";
       PrintLine(lineNumber);
       RunBackground();
       while (NotColon(++lineNumber)) {
@@ -173,23 +174,17 @@ namespace Askowl.Gherkin {
 
     private void Comments() => PrintBaseLine(lineNumber, "silver");
 
-    private void ScenarioOutline() {
-      scenarioTags   = unassignedTags;
-      unassignedTags = "";
-      LoadSteps(outline);
-    }
+    private void ScenarioOutline() => LoadSteps(outline);
 
     private void Examples() {
-      scenarioTags   = unassignedTags;
-      unassignedTags = "";
       PrintLine(lineNumber);
-      if (!isDataTable(lineNumber + 1)) {
+      if (!IsDataTable(lineNumber + 1)) {
         Error("Expecting a data table");
         return;
       }
       PrintBaseLine(++lineNumber);
       var headings = ParseDataTableLine(lineNumber);
-      while (isDataTable(lineNumber + 1)) {
+      while (IsDataTable(lineNumber + 1)) {
         PrintBaseLine(++lineNumber);
         var data = ParseDataTableLine(lineNumber);
         for (int i = 0; i < outline.length; i++) {
@@ -204,7 +199,7 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private bool isDataTable(int at) =>
+    private bool IsDataTable(int at) =>
       (++at < gherkinLines.Count) && (gherkinLines[at].state == Vocabulary.Keywords.DataTable);
 
     private void DataTable() {
@@ -212,14 +207,11 @@ namespace Askowl.Gherkin {
       Error("Hanging Data Table line");
     }
 
-    private void Tag() {
-      PrintBaseLine(lineNumber, "green");
-      unassignedTags = gherkinLines[lineNumber].text;
-    }
+    private void Tag() => PrintBaseLine(lineNumber, "red");
     #endregion
 
     #region In support of Gherkin words
-    private Vocabulary.Keywords GherkinSyntax(string word, string text, string indent) {
+    private Vocabulary.Keywords GherkinSyntax(string word, string text) {
       var keyword = vocabulary.Keyword(word);
       if (keyword != Vocabulary.Keywords.Unknown) return keyword;
 
@@ -248,7 +240,8 @@ namespace Askowl.Gherkin {
     }
 
     private int DocString(int at) {
-      int first = ++at;
+      if (++at >= gherkinLines.Count) return 0;
+      int first = at;
       if (gherkinLines[at].state != Vocabulary.Keywords.DocString) return 0;
       var left  = gherkinLines[at].indent.Length;
       var start = ++at;
@@ -263,10 +256,10 @@ namespace Askowl.Gherkin {
 
     private int DataTable(int at) {
       int first = ++at;
-      if (!isDataTable(at)) return 0;
-      var table = new List<List<string>>();
-      while (isDataTable(at)) table.Add(ParseDataTableLine(at++));
-      step.parameters[2] = table;
+      if (!IsDataTable(at)) return 0;
+      var table = new List<string[]>();
+      while (IsDataTable(at)) table.Add(ParseDataTableLine(at++).ToArray());
+      step.parameters[2] = table.ToArray();
       return at - first;
     }
 
@@ -281,25 +274,38 @@ namespace Askowl.Gherkin {
     }
 
     private void RunStep(string statement = null) {
-      if (!Included()) return;
       if (statement == null) statement = step.statement;
       for (int i = 0; i < definitionList.Count; i++) {
         var match = definitionList[i].regex.Match(statement);
         if (match.Success) {
-          step.parameters[0] = match;
-          definitionList[i].methodInfo.Invoke(definitionList[i].container, step.parameters);
+          try {
+            var parameters = InferParameters(definitionList[i], match);
+            var matches    = match.Groups.OfType<Group>().Select(m => m.Value).ToList();
+            matches.RemoveAt(0);
+            step.parameters[0] = matches.ToArray();
+            definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters);
+          } catch (Exception e) {
+            Error(e.ToString());
+          }
           return;
         }
       }
       Error("No matching definition");
     }
 
-    private bool Included() {
-      if (inclusionTags.Length == 0) return true;
-      for (int i = 0; i < inclusionTags.Length; i++) {
-        if (featureTags.Contains(inclusionTags[i]) || scenarioTags.Contains(inclusionTags[i])) return true;
+    private object[] InferParameters(Definition definition, Match match) {
+      var parameters = new object[definition.parameters.Length];
+      for (int i = 0; i < parameters.Length; i++) {
+        var type = definition.parameterTypes[i];
+        if (type == typeof(string)) {
+          parameters[i] = step.parameters[1]; // docString
+        } else if (type == typeof(string[])) {
+          parameters[i] = match; // matches
+        } else if (type == typeof(string[][])) {
+          parameters[i] = step.parameters[2]; // table
+        }
       }
-      return false;
+      return parameters;
     }
 
     private void RunBackground() {
@@ -328,14 +334,8 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private void PrintBaseLine(int at, string colour = "black") {
-      if (gherkinLines[at].state == Vocabulary.Keywords.Tag) {
-        builder.Append("<color=green>").Append(gherkinLines[at].text).AppendLine("</color>");
-        unassignedTags = gherkinLines[lineNumber].text;
-      } else {
-        builder.Append($"<color={colour}>").Append(gherkinLines[at].text).AppendLine("</color>");
-      }
-    }
+    private void PrintBaseLine(int at, string colour = "black") =>
+      builder.Append($"<color={colour}>").Append(gherkinLines[at].text).AppendLine("</color>");
     #endregion
   }
 
