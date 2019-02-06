@@ -20,6 +20,8 @@ namespace Askowl.Gherkin {
 
     /// <a href=""></a> //#TBD#//
     [NonSerialized] public bool Success;
+    /// <a href=""></a> //#TBD#//
+    [NonSerialized] public string Output;
 
     #region Initialisation
     private Vocabulary vocabulary;
@@ -57,7 +59,7 @@ namespace Askowl.Gherkin {
       vocabulary = vocabularies[0];
       for (int i = 1; i < vocabularies.Length; i++) vocabulary.Merge(vocabularies[i]);
 
-      actions = new Dictionary<Vocabulary.Keywords, Action> {
+      actions = new Dictionary<Vocabulary.Keywords, Func<Emitter>> {
         {Vocabulary.Keywords.Feature, Feature}
       , {Vocabulary.Keywords.Rule, Rule}
       , {Vocabulary.Keywords.Scenario, Scenario}
@@ -71,6 +73,13 @@ namespace Askowl.Gherkin {
       , {Vocabulary.Keywords.Tag, Tag}
       , {Vocabulary.Keywords.Unknown, Unknown}
       };
+
+      emitOnComplete = Emitter.Instance;
+      process        = Process;
+      scenario       = Scenario;
+      examples       = Examples;
+      outlineActor   = Outline;
+      runFiber       = Fiber.Instance.WaitFor(emitOnComplete);
     }
     #endregion
 
@@ -92,15 +101,17 @@ namespace Askowl.Gherkin {
     private GherkinLine       step;
     private RangeInt          background = new RangeInt();
     private RangeInt          outline    = new RangeInt();
+    private Emitter           emitOnComplete, emitOnSectionComplete;
+    private Fiber             runFiber;
     #endregion
 
     #region Processing
     /// <a href=""></a> //#TBD#//
-    public string Run(string featureFileName) {
+    public Fiber Run(string featureFileName) {
       builder = new StringBuilder();
       Success = true;
-      if (ReadFile(featureFileName)) Process();
-      return builder.ToString();
+      if (ReadFile(featureFileName)) Process(0);
+      return runFiber.Go();
     }
 
     private bool ReadFile(string fileName) {
@@ -128,86 +139,143 @@ namespace Askowl.Gherkin {
     }
     private static readonly Regex gherkinRegex = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
 
-    private void Process() {
-      for (lineNumber = 0; lineNumber < gherkinLines.Count; lineNumber++) {
-        step = gherkinLines[lineNumber];
-        actions[step.state]();
-      }
+    private void Process(int from) {
+      lineNumber = from - 1;
+      Process(Fiber.Instance);
     }
-    private Dictionary<Vocabulary.Keywords, Action> actions;
+
+    private void Process(Fiber fiber) {
+      Emitter emitter;
+      do {
+        if (++lineNumber >= gherkinLines.Count) {
+          Output = builder.ToString();
+          if (Output.Length == 0) Success = false;
+          emitOnComplete.Fire();
+        }
+        step    = gherkinLines[lineNumber];
+        emitter = actions[step.state]();
+      } while (emitter == null);
+      fiber.WaitFor(emitter).Do(process);
+    }
+    private Fiber.Action                                   process;
+    private Dictionary<Vocabulary.Keywords, Func<Emitter>> actions;
     #endregion
 
     #region Implementing Gherkin Keywords
-    private void Unknown() => PrintBaseLine(lineNumber);
-
-    private void Feature() {
+    private Emitter Unknown() {
+      PrintBaseLine(lineNumber);
+      return null;
+    }
+    private Emitter Feature() {
       background.length = outline.length = 0;
       PrintLine(lineNumber);
-      while (NotColon(++lineNumber)) PrintBaseLine(lineNumber);
+      while (!Colon(++lineNumber)) PrintBaseLine(lineNumber);
+      return null;
     }
-    private void Rule() => Feature();
 
-    private void Background() => LoadSteps(background);
+    private Emitter Rule() => Feature();
 
-    private void Scenario() {
+    private Emitter Background() => LoadSteps(background);
+
+    private Emitter Scenario() {
       PrintLine(lineNumber);
       RunBackground();
-      while (NotColon(++lineNumber)) {
-        if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
-          Step();
-          RunStep();
-        } else {
-          PrintBaseLine(lineNumber);
-        }
-      }
+      emitOnSectionComplete = Emitter.SingleFireInstance;
+      Scenario(Fiber.Instance);
+      return emitOnSectionComplete;
     }
+    private void Scenario(Fiber fiber) {
+      while (true) {
+        if (Colon(lineNumber + 1)) {
+          emitOnSectionComplete.Fire();
+          return;
+        }
+        if (gherkinLines[++lineNumber].state == Vocabulary.Keywords.Step) break;
+        PrintBaseLine(lineNumber);
+      }
+      Step();
+      fiber.WaitFor(RunStep()).Do(scenario);
+    }
+    private Fiber.Action scenario;
 
-    private void Step() {
+    private Emitter Step() {
       step = gherkinLines[lineNumber];
       PrintLine(lineNumber);
       var used = DocString(lineNumber) + DataTable(lineNumber);
       for (int i = 1; i < used; i++) PrintBaseLine(lineNumber + i);
       lineNumber += used;
+      return null;
     }
 
-    private void DocString() => PrintLine(lineNumber);
+    private Emitter DocString() {
+      PrintLine(lineNumber);
+      return null;
+    }
 
-    private void Comments() => PrintBaseLine(lineNumber, "silver");
+    private Emitter Comments() {
+      PrintBaseLine(lineNumber, "silver");
+      return null;
+    }
 
-    private void ScenarioOutline() => LoadSteps(outline);
+    private Emitter ScenarioOutline() => LoadSteps(outline);
 
-    private void Examples() {
+    private Emitter Examples() {
       PrintLine(lineNumber);
       if (!IsDataTable(lineNumber + 1)) {
         Error("Expecting a data table");
+        return null;
+      }
+      PrintBaseLine(++lineNumber);
+      examplesHeading       = ParseDataTableLine(lineNumber).ToArray();
+      emitOnSectionComplete = Emitter.SingleFireInstance;
+      Examples(Fiber.Instance);
+      return emitOnSectionComplete;
+    }
+
+    private void Examples(Fiber fiber) {
+      if (!IsDataTable(lineNumber + 1)) {
+        emitOnSectionComplete.Fire();
         return;
       }
       PrintBaseLine(++lineNumber);
-      var headings = ParseDataTableLine(lineNumber);
-      while (IsDataTable(lineNumber + 1)) {
-        PrintBaseLine(++lineNumber);
-        var data = ParseDataTableLine(lineNumber);
-        for (int i = 0; i < outline.length; i++) {
-          step = gherkinLines[i];
-          var statement = step.statement;
-          for (int j = 0; j < headings.Count; j++) {
-            statement = statement.Replace($"<{headings[j]}>", data[j]);
-          }
-          i += DocString(i);
-          RunStep(statement);
-        }
-      }
+      examplesEntry         = ParseDataTableLine(lineNumber);
+      outlineIndex          = 0;
+      emitOnOutlineComplete = Emitter.SingleFireInstance;
+      Outline(Fiber.Instance);
+      fiber.WaitFor(emitOnOutlineComplete).Do(examples);
     }
+
+    private void Outline(Fiber fiber) {
+      if (outlineIndex >= outline.length) {
+        emitOnOutlineComplete.Fire();
+        return;
+      }
+      step = gherkinLines[outlineIndex];
+      var statement = step.statement;
+      for (int j = 0; j < examplesHeading.Length; j++) {
+        statement = statement.Replace($"<{examplesHeading[j]}>", examplesEntry[j]);
+      }
+      outlineIndex += DocString(outlineIndex);
+      fiber.WaitFor(RunStep(statement)).Do(outlineActor);
+    }
+    private Fiber.Action examples,        outlineActor;
+    private string[]     examplesHeading, examplesEntry;
+    private int          outlineIndex;
+    private Emitter      emitOnOutlineComplete;
 
     private bool IsDataTable(int at) =>
       (++at < gherkinLines.Count) && (gherkinLines[at].state == Vocabulary.Keywords.DataTable);
 
-    private void DataTable() {
+    private Emitter DataTable() {
       PrintLine(lineNumber);
       Error("Hanging Data Table line");
+      return null;
     }
 
-    private void Tag() => PrintBaseLine(lineNumber, "red");
+    private Emitter Tag() {
+      PrintBaseLine(lineNumber, "red");
+      return null;
+    }
     #endregion
 
     #region In support of Gherkin words
@@ -226,10 +294,10 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private void LoadSteps(RangeInt to) {
+    private Emitter LoadSteps(RangeInt to) {
       to.start = lineNumber + 1;
       PrintLine(lineNumber);
-      while (NotColon(++lineNumber)) {
+      while (!Colon(++lineNumber)) {
         if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
           Step();
         } else {
@@ -237,6 +305,7 @@ namespace Askowl.Gherkin {
         }
       }
       to.length = lineNumber - to.start;
+      return null;
     }
 
     private int DocString(int at) {
@@ -263,17 +332,17 @@ namespace Askowl.Gherkin {
       return at - first;
     }
 
-    private List<string> ParseDataTableLine(int at) =>
-      gherkinLines[at].text.Split('|').Skip(1).Select(s => s.Trim()).ToList();
+    private string[] ParseDataTableLine(int at) =>
+      gherkinLines[at].text.Split('|').Skip(1).Select(s => s.Trim()).ToArray();
 
-    private bool NotColon(int lineNo) {
-      if (lineNo >= gherkinLines.Count) return false;
+    private bool Colon(int lineNo) {
+      if (lineNo >= gherkinLines.Count) return true;
       var isColon = gherkinLines[lineNo].colon;
       if (isColon) lineNumber--;
-      return !isColon;
+      return isColon;
     }
 
-    private void RunStep(string statement = null) {
+    private Emitter RunStep(string statement = null) {
       if (statement == null) statement = step.statement;
       for (int i = 0; i < definitionList.Count; i++) {
         var match = definitionList[i].regex.Match(statement);
@@ -283,14 +352,14 @@ namespace Askowl.Gherkin {
             var matches    = match.Groups.OfType<Group>().Select(m => m.Value).ToList();
             matches.RemoveAt(0);
             step.parameters[0] = matches.ToArray();
-            definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters);
+            return definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters) as Emitter;
           } catch (Exception e) {
             Error(e.ToString());
           }
-          return;
         }
       }
       Error("No matching definition");
+      return null;
     }
 
     private object[] InferParameters(Definition definition, Match match) {
