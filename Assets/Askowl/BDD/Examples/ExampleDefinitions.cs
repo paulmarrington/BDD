@@ -38,7 +38,7 @@ namespace Askowl.Examples {
 
     [Step(@"^.* Breaker joins the Maker's game$")] public Emitter BreakerJoinsGame() => null;
 
-    [Step(@"^.* Breaker must guess a word with \d+ characters$")]
+    [Step(@"^.* Breaker must guess a word with (\d+) characters$")]
     public Emitter GuessWord(string[] matches) {
       Assert.AreEqual("silky", wordToGuess);
       Assert.AreEqual("5",     matches[0]);
@@ -56,16 +56,12 @@ namespace Askowl.Examples {
     [Step(@"^posted$")] public Emitter Posted() {
       var emitter = Emitter.SingleFireInstance.Context("Posted");
       posted = false;
-      Fiber.Start.WaitFor(0.3f).Do(_ => posted = true).Fire(emitter).Do(_ => Debug.Log("FIRED"));
+      Fiber.Start.WaitFor(0.3f).Do(_ => posted = true).Fire(emitter);
       return emitter;
     }
     private bool posted;
 
     [Step(@"^it is visible as html$")] public void ItIsVisible() => Assert.IsTrue(posted);
-    /*
-    [Step(@"^$")] public void (
-      string[] matches, string docString, string[][] table) => throw new NotImplementedException();
-      */
   }
 }
 #endif

@@ -156,7 +156,7 @@ namespace Askowl.Gherkin {
         step    = gherkinLines[lineNumber];
         emitter = actions[step.state]();
       } while (emitter == null);
-      fiber.WaitFor(emitter).Do(process).Go();
+      fiber.Go().WaitFor(emitter).Do(process);
     }
     private Fiber.Action                                   process;
     private Dictionary<Vocabulary.Keywords, Func<Emitter>> actions;
@@ -195,14 +195,7 @@ namespace Askowl.Gherkin {
         PrintBaseLine(lineNumber);
       }
       Step();
-//      fiber.WaitFor(RunStep()).Do(scenario).Go();
-      var rs = RunStep();
-      Debug.Log($"*** Scenario '{step}' {Time.realtimeSinceStartup} '{rs}'"); //#DM#//
-      if (rs != null)
-        fiber.Do(_ => Debug.Log($"BEFORE WAIT {Time.realtimeSinceStartup} {rs}")).WaitFor(rs)
-             .Do(_ => Debug.Log($"AFTER WAIT {Time.realtimeSinceStartup} {rs}")).Do(scenario).Go();
-      else
-        fiber.WaitFor(rs).Do(scenario).Go();
+      fiber.Go().WaitFor(RunStep()).Do(scenario);
     }
     private Fiber.Action scenario;
 
@@ -220,10 +213,7 @@ namespace Askowl.Gherkin {
       return null;
     }
 
-    private Emitter Comments() {
-      PrintBaseLine(lineNumber, "silver");
-      return null;
-    }
+    private Emitter Comments() => null;
 
     private Emitter ScenarioOutline() => LoadSteps(outline);
 
@@ -246,33 +236,35 @@ namespace Askowl.Gherkin {
         return;
       }
       PrintBaseLine(++lineNumber);
-      examplesEntry         = ParseDataTableLine(lineNumber);
-      outlineIndex          = 0;
-      emitOnOutlineComplete = Emitter.SingleFireInstance;
+      examplesEntry            = ParseDataTableLine(lineNumber);
+      outlineIndex             = 0;
+      emitOnOutlineRowComplete = Emitter.SingleFireInstance;
       Outline(Fiber.Instance);
-      fiber.WaitFor(emitOnOutlineComplete).Do(examples).Go();
+      fiber.Go().WaitFor(emitOnOutlineRowComplete).Do(examples);
     }
 
     private void Outline(Fiber fiber) {
+      Debug.Log($"*** Outline '{outlineIndex}'"); //#DM#//
       if (outlineIndex >= outline.length) {
-        emitOnOutlineComplete.Fire();
+        emitOnOutlineRowComplete.Fire();
         return;
       }
-      step = gherkinLines[outlineIndex];
+      step = gherkinLines[outline.start + outlineIndex];
       var statement = step.statement;
       for (int j = 0; j < examplesHeading.Length; j++) {
         statement = statement.Replace($"<{examplesHeading[j]}>", examplesEntry[j]);
       }
-      outlineIndex += DocString(outlineIndex);
-      fiber.WaitFor(RunStep(statement)).Do(outlineActor).Go();
+      outlineIndex += DocString(outline.start + outlineIndex) + 1;
+      builder.Append("<color=grey>").Append(step.keyword).Append(" ").Append(statement).AppendLine("</color>");
+      fiber.Go().WaitFor(RunStep(statement)).Do(outlineActor);
     }
     private Fiber.Action examples,        outlineActor;
     private string[]     examplesHeading, examplesEntry;
     private int          outlineIndex;
-    private Emitter      emitOnOutlineComplete;
+    private Emitter      emitOnOutlineRowComplete;
 
     private bool IsDataTable(int at) =>
-      (++at < gherkinLines.Count) && (gherkinLines[at].state == Vocabulary.Keywords.DataTable);
+      (at < gherkinLines.Count) && (gherkinLines[at].state == Vocabulary.Keywords.DataTable);
 
     private Emitter DataTable() {
       PrintLine();
