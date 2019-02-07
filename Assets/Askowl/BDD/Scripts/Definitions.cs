@@ -21,7 +21,7 @@ namespace Askowl.Gherkin {
     /// <a href=""></a> //#TBD#//
     [NonSerialized] public bool Success;
     /// <a href=""></a> //#TBD#//
-    [NonSerialized] public string Output;
+    [NonSerialized] public string Output = "";
 
     #region Initialisation
     private Vocabulary vocabulary;
@@ -46,7 +46,7 @@ namespace Askowl.Gherkin {
               var regex                        = ((StepAttribute) attr).Definition;
               if (container == null) container = Activator.CreateInstance(type);
               var parameters                   = mInfo.GetParameters();
-              var parameterTypes               = parameters.ToList().Select(m => m.GetType()).ToArray();
+              var parameterTypes               = parameters.ToList().Select(m => m.ParameterType).ToArray();
               definitionList.Add(
                 new Definition {
                   methodInfo     = mInfo, regex = regex, container = container, parameters = parameters
@@ -151,11 +151,12 @@ namespace Askowl.Gherkin {
           Output = builder.ToString();
           if (Output.Length == 0) Success = false;
           emitOnComplete.Fire();
+          return;
         }
         step    = gherkinLines[lineNumber];
         emitter = actions[step.state]();
       } while (emitter == null);
-      fiber.WaitFor(emitter).Do(process);
+      fiber.WaitFor(emitter).Do(process).Go();
     }
     private Fiber.Action                                   process;
     private Dictionary<Vocabulary.Keywords, Func<Emitter>> actions;
@@ -168,7 +169,7 @@ namespace Askowl.Gherkin {
     }
     private Emitter Feature() {
       background.length = outline.length = 0;
-      PrintLine(lineNumber);
+      PrintLine();
       while (!Colon(++lineNumber)) PrintBaseLine(lineNumber);
       return null;
     }
@@ -178,7 +179,7 @@ namespace Askowl.Gherkin {
     private Emitter Background() => LoadSteps(background);
 
     private Emitter Scenario() {
-      PrintLine(lineNumber);
+      PrintLine();
       RunBackground();
       emitOnSectionComplete = Emitter.SingleFireInstance;
       Scenario(Fiber.Instance);
@@ -194,13 +195,20 @@ namespace Askowl.Gherkin {
         PrintBaseLine(lineNumber);
       }
       Step();
-      fiber.WaitFor(RunStep()).Do(scenario);
+//      fiber.WaitFor(RunStep()).Do(scenario).Go();
+      var rs = RunStep();
+      Debug.Log($"*** Scenario '{step}' {Time.realtimeSinceStartup} '{rs}'"); //#DM#//
+      if (rs != null)
+        fiber.Do(_ => Debug.Log($"BEFORE WAIT {Time.realtimeSinceStartup} {rs}")).WaitFor(rs)
+             .Do(_ => Debug.Log($"AFTER WAIT {Time.realtimeSinceStartup} {rs}")).Do(scenario).Go();
+      else
+        fiber.WaitFor(rs).Do(scenario).Go();
     }
     private Fiber.Action scenario;
 
     private Emitter Step() {
       step = gherkinLines[lineNumber];
-      PrintLine(lineNumber);
+      PrintLine();
       var used = DocString(lineNumber) + DataTable(lineNumber);
       for (int i = 1; i < used; i++) PrintBaseLine(lineNumber + i);
       lineNumber += used;
@@ -208,7 +216,7 @@ namespace Askowl.Gherkin {
     }
 
     private Emitter DocString() {
-      PrintLine(lineNumber);
+      PrintLine();
       return null;
     }
 
@@ -220,7 +228,7 @@ namespace Askowl.Gherkin {
     private Emitter ScenarioOutline() => LoadSteps(outline);
 
     private Emitter Examples() {
-      PrintLine(lineNumber);
+      PrintLine();
       if (!IsDataTable(lineNumber + 1)) {
         Error("Expecting a data table");
         return null;
@@ -242,7 +250,7 @@ namespace Askowl.Gherkin {
       outlineIndex          = 0;
       emitOnOutlineComplete = Emitter.SingleFireInstance;
       Outline(Fiber.Instance);
-      fiber.WaitFor(emitOnOutlineComplete).Do(examples);
+      fiber.WaitFor(emitOnOutlineComplete).Do(examples).Go();
     }
 
     private void Outline(Fiber fiber) {
@@ -256,7 +264,7 @@ namespace Askowl.Gherkin {
         statement = statement.Replace($"<{examplesHeading[j]}>", examplesEntry[j]);
       }
       outlineIndex += DocString(outlineIndex);
-      fiber.WaitFor(RunStep(statement)).Do(outlineActor);
+      fiber.WaitFor(RunStep(statement)).Do(outlineActor).Go();
     }
     private Fiber.Action examples,        outlineActor;
     private string[]     examplesHeading, examplesEntry;
@@ -267,7 +275,7 @@ namespace Askowl.Gherkin {
       (++at < gherkinLines.Count) && (gherkinLines[at].state == Vocabulary.Keywords.DataTable);
 
     private Emitter DataTable() {
-      PrintLine(lineNumber);
+      PrintLine();
       Error("Hanging Data Table line");
       return null;
     }
@@ -296,7 +304,7 @@ namespace Askowl.Gherkin {
 
     private Emitter LoadSteps(RangeInt to) {
       to.start = lineNumber + 1;
-      PrintLine(lineNumber);
+      PrintLine();
       while (!Colon(++lineNumber)) {
         if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
           Step();
@@ -349,9 +357,6 @@ namespace Askowl.Gherkin {
         if (match.Success) {
           try {
             var parameters = InferParameters(definitionList[i], match);
-            var matches    = match.Groups.OfType<Group>().Select(m => m.Value).ToList();
-            matches.RemoveAt(0);
-            step.parameters[0] = matches.ToArray();
             return definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters) as Emitter;
           } catch (Exception e) {
             Error(e.ToString());
@@ -369,7 +374,9 @@ namespace Askowl.Gherkin {
         if (type == typeof(string)) {
           parameters[i] = step.parameters[1]; // docString
         } else if (type == typeof(string[])) {
-          parameters[i] = match; // matches
+          var matches = match.Groups.OfType<Group>().Select(m => m.Value).ToList();
+          matches.RemoveAt(0);
+          parameters[i] = matches.ToArray();
         } else if (type == typeof(string[][])) {
           parameters[i] = step.parameters[2]; // table
         }
@@ -392,8 +399,8 @@ namespace Askowl.Gherkin {
       Success = false;
     }
 
-    private void PrintLine(int at) {
-      var line = gherkinLines[at];
+    private void PrintLine() {
+      var line = gherkinLines[lineNumber];
       if (line.colon) {
         builder.Append(line.indent).Append("<color=maroon>").Append(line.keyword).Append(":</color> <color=blue>")
                .Append(line.statement).Append("</color>\n");
@@ -407,11 +414,6 @@ namespace Askowl.Gherkin {
       builder.Append($"<color={colour}>").Append(gherkinLines[at].text).AppendLine("</color>");
     #endregion
   }
-
-//  /// <a href=""></a> //#TBD#//
-//  [Serializable] public class GherkinDefinitions : MonoBehaviour {
-//    [SerializeField] private string description;
-//  }
 
   /// <a href=""></a> //#TBD#//
   [AttributeUsage(AttributeTargets.Method)] public class StepAttribute : Attribute {
