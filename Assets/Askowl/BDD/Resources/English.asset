@@ -29,8 +29,8 @@ MonoBehaviour:
   background:
   - Background
   scenarioOutline:
-  - Scenario Outline
-  - Scenario Template
+  - ScenarioOutline
+  - ScenarioTemplate
   examples:
   - Scenarios
   - Examples

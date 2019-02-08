@@ -121,7 +121,7 @@ namespace Askowl.Gherkin {
         using (var file = new StreamReader(fileName)) {
           string text;
           while ((text = file.ReadLine()) != null) {
-            var match = gherkinRegex.Match(text);
+            var match = gherkinRegex.Match(DropSpaces(text));
             gherkinLines.Add(
               new GherkinLine {
                 keyword = match.Groups[2].Value, statement = match.Groups[4].Value
@@ -137,7 +137,13 @@ namespace Askowl.Gherkin {
       }
       return Success;
     }
-    private static readonly Regex gherkinRegex = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
+    private string DropSpaces(string text) {
+      var match               = dropSpaceRegex.Match((text));
+      if (match.Success) text = match.Groups[1].Value + match.Groups[2].Value;
+      return text;
+    }
+    private static readonly Regex gherkinRegex   = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
+    private static readonly Regex dropSpaceRegex = new Regex(@"^(\s*\w+)\s(\w+:.*)$");
 
     private void Process(int from) {
       lineNumber = from - 1;
@@ -176,7 +182,10 @@ namespace Askowl.Gherkin {
 
     private Emitter Rule() => Feature();
 
-    private Emitter Background() => LoadSteps(background);
+    private Emitter Background() {
+      background = LoadSteps();
+      return null;
+    }
 
     private Emitter Scenario() {
       PrintLine();
@@ -215,12 +224,22 @@ namespace Askowl.Gherkin {
 
     private Emitter Comments() => null;
 
-    private Emitter ScenarioOutline() => LoadSteps(outline);
+    private Emitter ScenarioOutline() {
+      outline = LoadSteps();
+      return null;
+    }
 
     private Emitter Examples() {
       PrintLine();
       if (!IsDataTable(lineNumber + 1)) {
         Error("Expecting a data table");
+        return null;
+      }
+      if (outline.length == 0) {
+        Error("No Scenario Outline Set");
+        do {
+          lineNumber++;
+        } while (IsDataTable(lineNumber));
         return null;
       }
       PrintBaseLine(++lineNumber);
@@ -244,7 +263,6 @@ namespace Askowl.Gherkin {
     }
 
     private void Outline(Fiber fiber) {
-      Debug.Log($"*** Outline '{outlineIndex}'"); //#DM#//
       if (outlineIndex >= outline.length) {
         emitOnOutlineRowComplete.Fire();
         return;
@@ -255,7 +273,8 @@ namespace Askowl.Gherkin {
         statement = statement.Replace($"<{examplesHeading[j]}>", examplesEntry[j]);
       }
       outlineIndex += DocString(outline.start + outlineIndex) + 1;
-      builder.Append("<color=grey>").Append(step.keyword).Append(" ").Append(statement).AppendLine("</color>");
+      builder.Append("<color=grey>").Append(step.indent).Append(step.keyword).Append(" ").Append(statement)
+             .AppendLine("</color>");
       fiber.Go().WaitFor(RunStep(statement)).Do(outlineActor);
     }
     private Fiber.Action examples,        outlineActor;
@@ -294,8 +313,8 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private Emitter LoadSteps(RangeInt to) {
-      to.start = lineNumber + 1;
+    private RangeInt LoadSteps() {
+      var start = lineNumber + 1;
       PrintLine();
       while (!Colon(++lineNumber)) {
         if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
@@ -304,8 +323,7 @@ namespace Askowl.Gherkin {
           PrintBaseLine(lineNumber, "grey");
         }
       }
-      to.length = lineNumber - to.start;
-      return null;
+      return new RangeInt(start, lineNumber - start);
     }
 
     private int DocString(int at) {

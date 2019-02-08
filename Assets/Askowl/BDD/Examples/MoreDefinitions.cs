@@ -26,10 +26,17 @@ namespace Askowl.Examples {
       Assert.AreEqual("name",       table[0][0]);
       Assert.AreEqual("@mattwynne", table[3][2]);
     }
-    /*
-    [Step(@"^$")] public void (
-      string[] matches, string docString, string[][] table) => throw new NotImplementedException();
-      */
+    private int cucumbers, eaten;
+    [Step(@"^there are (\d+) cucumbers$")] public void ThereAreCucumbers(
+      string[] matches) =>
+      cucumbers = int.Parse(matches[0]);
+    [Step(@"^I eat (\d+) cucumbers$")] public void IEatCucumbers(
+      string[] matches) => eaten = int.Parse(matches[0]);
+    [Step(@"^I should have (\d+) cucumbers$")] public void CucumbersLeft(
+      string[] matches) {
+      var left = int.Parse(matches[0]);
+      Assert.AreEqual(left, cucumbers - eaten);
+    }
   }
 }
 #endif
