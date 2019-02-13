@@ -5,9 +5,9 @@ using CustomAsset;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
-#if UNITY_EDITOR && BDD
+#if AskowlTests
 // ReSharper disable MissingXmlDoc
-namespace Askowl.Examples {
+namespace Askowl.BDD.Examples {
   public class MoreDefinitions {
     [UnityTest] public IEnumerator Outline() {
       var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");

@@ -1,14 +1,15 @@
 ﻿// Copyright 2019 (C) paul@marrington.net http://www.askowl.net/unity-packages
+#if AskowlTests
 using System;
 using System.Collections;
 using Askowl.Gherkin;
 using CustomAsset;
-using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.Assertions;
 using UnityEngine.TestTools;
-#if UNITY_EDITOR && BDD
+
 // ReSharper disable MissingXmlDoc
-namespace Askowl.Examples {
+namespace Askowl.BDD.Examples {
   [Serializable] public class ExampleDefinitions {
     [UnityTest] public IEnumerator Basic() {
       var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");

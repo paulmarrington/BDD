@@ -1,5 +1,5 @@
 {
-    "name": "BddExamples",
+    "name": "BDDExamples",
     "references": [
         "CustomAssets",
         "BDD",
