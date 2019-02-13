@@ -1,7 +1,6 @@
 ﻿// Copyright 2019 (C) paul@marrington.net http://www.askowl.net/unity-packages
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -39,6 +38,7 @@ namespace Askowl.Gherkin {
 
     protected override void OnEnable() { // Iterate through all the methods of the class.
       base.OnEnable();
+      if (gherkinDefinitions == null) return;
       foreach (MonoScript definitions in gherkinDefinitions) {
         var    type      = definitions.GetClass();
         object container = null;
@@ -109,16 +109,16 @@ namespace Askowl.Gherkin {
 
     #region Processing
     /// <a href=""></a> //#TBD#//
-    public Fiber Run(string featureFileName) {
+    public Fiber Run(string featureFileName, string label) {
       builder = new StringBuilder();
       Success = true;
-      if (ReadFile(featureFileName)) Process(0);
+      var filePath = Objects.FindFile($"{featureFileName}.feature");
+      if (ReadFile(filePath)) Process(0);
       return runFiber.Go();
     }
 
     private bool ReadFile(string fileName) {
       gherkinLines = new List<GherkinLine>();
-      if (!fileName.Contains(".")) fileName += ".feature";
       try {
         using (var file = new StreamReader(fileName)) {
           string text;
@@ -437,13 +437,17 @@ namespace Askowl.Gherkin {
   }
 
   /// <a href=""></a> //#TBD#//
-  public static class PlayModeGherkin {
+  public static class Feature {
     /// <a href=""></a> //#TBD#//
-    public static Fiber Gherkin(this PlayModeTests pmt, string definitionAsset, string featureFile) {
+    public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
       var definitions = Manager.Load<Definitions>(definitionAsset);
-      var fiber       = definitions.Run(featureFile);
-      Debug.Log(definitions.Output);
-      Assert.IsTrue(definitions.Success);
+      var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label)).Do(
+        _ => {
+          Debug.Log(definitions.Output);
+          Assert.IsTrue(definitions.Success);
+        });
+      fiber.Context(definitions);
+      return fiber;
     }
   }
 }
