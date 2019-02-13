@@ -1,6 +1,7 @@
 ﻿// Copyright 2019 (C) paul@marrington.net http://www.askowl.net/unity-packages
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,7 @@ using System.Text.RegularExpressions;
 using CustomAsset;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Assertions;
 
 namespace Askowl.Gherkin {
   /// <a href="https://docs.cucumber.io/gherkin/reference/"></a> //#TBD#//
@@ -432,5 +434,16 @@ namespace Askowl.Gherkin {
 
     /// <a href=""></a> //#TBD#//
     public Regex Definition => regex;
+  }
+
+  /// <a href=""></a> //#TBD#//
+  public static class PlayModeGherkin {
+    /// <a href=""></a> //#TBD#//
+    public static Fiber Gherkin(this PlayModeTests pmt, string definitionAsset, string featureFile) {
+      var definitions = Manager.Load<Definitions>(definitionAsset);
+      var fiber       = definitions.Run(featureFile);
+      Debug.Log(definitions.Output);
+      Assert.IsTrue(definitions.Success);
+    }
   }
 }
