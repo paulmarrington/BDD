@@ -10,16 +10,10 @@ using UnityEngine.TestTools;
 namespace Askowl.BDD.Examples {
   public class MoreDefinitions {
     [UnityTest] public IEnumerator Outline() {
-      var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");
-      yield return definitions.Run("Assets/Askowl/BDD/Examples/FeatureOutline").AsCoroutine();
-      Debug.Log(definitions.Output);
-      Assert.IsTrue(definitions.Success);
+      yield return Feature.Go("ExampleDefinitions.asset", "Assets/Askowl/BDD/Examples/FeatureOutline").AsCoroutine();
     }
     [UnityTest] public IEnumerator DataTable() {
-      var definitions = Manager.Load<Definitions>("ExampleDefinitions.asset");
-      yield return definitions.Run("Assets/Askowl/BDD/Examples/FeatureDataTable").AsCoroutine();
-      Debug.Log(definitions.Output);
-      Assert.IsTrue(definitions.Success);
+      yield return Feature.Go("ExampleDefinitions.asset", "Assets/Askowl/BDD/Examples/FeatureDataTable").AsCoroutine();
     }
     [Step(@"^the following users exist:$")] public void FollowingUsersExist(string[][] table) {
       Assert.AreEqual(4,            table.Length);

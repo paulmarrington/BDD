@@ -110,8 +110,9 @@ namespace Askowl.Gherkin {
     #region Processing
     /// <a href=""></a> //#TBD#//
     public Fiber Run(string featureFileName, string label) {
-      builder = new StringBuilder();
-      Success = true;
+      labelToProcess = label;
+      builder        = new StringBuilder();
+      Success        = true;
       var filePath = Objects.FindFile($"{featureFileName}.feature");
       if (ReadFile(filePath)) Process(0);
       return runFiber.Go();
@@ -178,7 +179,7 @@ namespace Askowl.Gherkin {
     private Emitter Feature() {
       background.length = outline.length = 0;
       PrintLine();
-      while (!Colon(++lineNumber)) PrintBaseLine(lineNumber);
+      while (!EndSteps(++lineNumber)) PrintBaseLine(lineNumber);
       return null;
     }
 
@@ -198,7 +199,7 @@ namespace Askowl.Gherkin {
     }
     private void Scenario(Fiber fiber) {
       while (true) {
-        if (Colon(lineNumber + 1)) {
+        if (EndSteps(lineNumber + 1)) {
           emitOnSectionComplete.Fire();
           return;
         }
@@ -295,8 +296,11 @@ namespace Askowl.Gherkin {
 
     private Emitter Tag() {
       PrintBaseLine(lineNumber, "red");
+      currentLabels = gherkinLines[lineNumber].statement;
       return null;
     }
+    private string currentLabels;
+    private string labelToProcess;
     #endregion
 
     #region In support of Gherkin words
@@ -318,7 +322,7 @@ namespace Askowl.Gherkin {
     private RangeInt LoadSteps() {
       var start = lineNumber + 1;
       PrintLine();
-      while (!Colon(++lineNumber)) {
+      while (!EndSteps(++lineNumber)) {
         if (gherkinLines[lineNumber].state == Vocabulary.Keywords.Step) {
           Step();
         } else {
@@ -355,14 +359,15 @@ namespace Askowl.Gherkin {
     private string[] ParseDataTableLine(int at) =>
       gherkinLines[at].text.Split('|').Skip(1).Select(s => s.Trim()).ToArray();
 
-    private bool Colon(int lineNo) {
+    private bool EndSteps(int lineNo) {
       if (lineNo >= gherkinLines.Count) return true;
-      var isColon = gherkinLines[lineNo].colon;
+      var isColon = gherkinLines[lineNo].colon || (gherkinLines[lineNo].state == Vocabulary.Keywords.Tag);
       if (isColon) lineNumber--;
       return isColon;
     }
 
     private Emitter RunStep(string statement = null) {
+      if (!isInLabelledSection) return null;
       if (statement == null) statement = step.statement;
       for (int i = 0; i < definitionList.Count; i++) {
         var match = definitionList[i].regex.Match(statement);
@@ -378,6 +383,9 @@ namespace Askowl.Gherkin {
       Error("No matching definition");
       return null;
     }
+
+    private bool isInLabelledSection =>
+      string.IsNullOrWhiteSpace(labelToProcess) || currentLabels.Contains(labelToProcess);
 
     private object[] InferParameters(Definition definition, Match match) {
       var parameters = new object[definition.parameters.Length];
@@ -411,7 +419,12 @@ namespace Askowl.Gherkin {
       Success = false;
     }
 
+    private void Check(bool ok, string message) {
+      if (!ok) Error(message);
+    }
+
     private void PrintLine() {
+      if (!isInLabelledSection) return;
       var line = gherkinLines[lineNumber];
       if (line.colon) {
         builder.Append(line.indent).Append("<color=maroon>").Append(line.keyword).Append(":</color> <color=blue>")
@@ -422,8 +435,10 @@ namespace Askowl.Gherkin {
       }
     }
 
-    private void PrintBaseLine(int at, string colour = "black") =>
+    private void PrintBaseLine(int at, string colour = "black") {
+      if (!isInLabelledSection || (gherkinLines[at].state == Vocabulary.Keywords.Tag)) return;
       builder.Append($"<color={colour}>").Append(gherkinLines[at].text).AppendLine("</color>");
+    }
     #endregion
   }
 
@@ -440,11 +455,11 @@ namespace Askowl.Gherkin {
   public static class Feature {
     /// <a href=""></a> //#TBD#//
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
-      var definitions = Manager.Load<Definitions>(definitionAsset);
+      var definitions = Manager.Load<Definitions>($"{definitionAsset}.asset");
       var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label)).Do(
         _ => {
           Debug.Log(definitions.Output);
-          Assert.IsTrue(definitions.Success);
+          Assert.IsTrue(definitions.Success, "Failure in this Gherkin feature file");
         });
       fiber.Context(definitions);
       return fiber;
