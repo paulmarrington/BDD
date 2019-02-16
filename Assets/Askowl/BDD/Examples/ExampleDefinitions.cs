@@ -12,11 +12,11 @@ using UnityEngine.TestTools;
 namespace Askowl.BDD.Examples {
   [Serializable] public class ExampleDefinitions {
     [UnityTest] public IEnumerator Basic() {
-      yield return Feature.Go("ExampleDefinitions.asset", "Assets/Askowl/BDD/Examples/FeatureBasic").AsCoroutine();
+      yield return Feature.Go("ExampleDefinitions", "FeatureBasic").AsCoroutine();
     }
 
     [UnityTest] public IEnumerator DocString() {
-      yield return Feature.Go("ExampleDefinitions.asset", "Assets/Askowl/BDD/Examples/FeatureDocString").AsCoroutine();
+      yield return Feature.Go("ExampleDefinitions", "FeatureDocString").AsCoroutine();
     }
 
     private string wordToGuess;
