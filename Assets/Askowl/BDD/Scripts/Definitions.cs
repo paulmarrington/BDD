@@ -20,7 +20,9 @@ namespace Askowl.Gherkin {
     [SerializeField] private MonoScript[] gherkinDefinitions = default;
 
     /// <a href=""></a> //#TBD#//
-    [NonSerialized] public bool Success;
+    public bool Success => ErrorMessage == null;
+    /// <a href=""></a> //#TBD#//
+    [NonSerialized] public string ErrorMessage;
 
     #region Initialisation
     private Vocabulary vocabulary;
@@ -76,7 +78,6 @@ namespace Askowl.Gherkin {
       public          Vocabulary.Keywords    type;
       public          bool                   colon;
       public          string                 statement;
-      public          object[]               parameters;
       public          List<GherkinStatement> extra;
       public override string                 ToString() => $"{keyword} ({type}): {statement}";
     }
@@ -85,7 +86,7 @@ namespace Askowl.Gherkin {
     private readonly StringBuilder          builder = new StringBuilder();
     private          int                    currentLine, savedLine, endLine, examplesIndex;
     private          GherkinStatement       currentStatement;
-    private          State                  currentState, lastState;
+    private          State                  currentState;
     private          RangeInt               background,   outline;
     private          string                 activeLabels, labelToProcess;
     private          string[][]             examples;
@@ -96,7 +97,7 @@ namespace Askowl.Gherkin {
       labelToProcess = label;
       activeLabels   = "";
       builder.Clear();
-      Success                = true;
+      ErrorMessage           = null;
       Assert.raiseExceptions = true;
       var filePath = Objects.FindFile($"{featureFileName}.feature");
       return (ReadFile(filePath)) ? Process() : null;
@@ -116,7 +117,7 @@ namespace Askowl.Gherkin {
               keyword = match.Groups[2].Value, statement = match.Groups[4].Value
             , indent  = match.Groups[1].Value, colon     = match.Groups[3].Length != 0
             , type    = GherkinSyntax(match.Groups[2].Value, text)
-            , text    = text, parameters = new object[3], extra = new List<GherkinStatement>()
+            , text    = text, extra = new List<GherkinStatement>()
             };
             switch (statement.type) {
               case Vocabulary.Keywords.DocString:
@@ -141,7 +142,7 @@ namespace Askowl.Gherkin {
         }
       } catch (Exception e) {
         builder.Append("\n<color=red>").Append(e).Append("</color>\n");
-        Success = false;
+        ErrorMessage = e.ToString();
       }
       return Success;
     }
@@ -172,15 +173,19 @@ namespace Askowl.Gherkin {
     #region Processing Feature File
     private Fiber Process() {
       currentLine  = 0;
-      currentState = lastState = State.Feature;
+      currentState = State.Feature;
       endLine      = -1;
-      return Fiber.Start.Begin
+      return Fiber.Start.OnError(
+                     message => Debug.Log($"*** ErrorMessage {GetInstanceID()}: '{ErrorMessage = message}]"))
+                  .Begin
                   .WaitFor(
                      fiber => {
                        do {
                          if (currentLine == endLine) {
+                           endLine = -1;
                            if (currentState == State.Examples) {
                              ExamplesRunComplete();
+                             if (currentLine >= gherkinStatements.Count) return null;
                            } else {
                              BackgroundRunComplete();
                            }
@@ -209,6 +214,12 @@ namespace Askowl.Gherkin {
                              PrintLine(statement);
                              if ((currentState != State.Scenario) && (currentState != State.Examples)) break;
                              var emitter = RunStep(statement);
+                             emitter?.Listen(
+                               _ => {
+                                 Debug.Log($"*** Process DONE '{statement}'"); //#DM#//
+                                 _.StopListening();
+                               });
+                             if (emitter != null) Debug.Log($"*** Process '{emitter}' -> {statement}"); //#DM#//
                              if (emitter != null) return emitter;
                              break;
 
@@ -221,7 +232,7 @@ namespace Askowl.Gherkin {
                            case Vocabulary.Keywords.ScenarioOutline:
                              PrintLine();
                              ChangeTo(State.Outline);
-                             outline.start = currentLine + 1;
+                             outline.start = currentLine;
                              break;
 
                            case Vocabulary.Keywords.Examples:
@@ -249,7 +260,7 @@ namespace Askowl.Gherkin {
     }
 
     private void ChangeTo(State newState) {
-      switch (lastState) {
+      switch (currentState) {
         case State.Background:
           background.length = currentLine - background.start - 1;
           break;
@@ -257,36 +268,40 @@ namespace Askowl.Gherkin {
           outline.length = currentLine - outline.start - 1;
           break;
       }
-      lastState    = currentState;
       currentState = newState;
     }
     private void RunBackground() {
       if (background.length == 0) return;
-      savedLine   = currentLine;
+      savedLine   = currentLine + 1;
       currentLine = background.start;
       endLine     = currentLine + background.length;
     }
-    private void BackgroundRunComplete() => currentLine = savedLine;
+    private void BackgroundRunComplete() {
+      currentLine = savedLine;
+      endLine     = -1;
+    }
 
     private void RunExamples() {
+      ChangeTo(State.Examples);
       if (outline.length == 0) {
         Error("No scenario outline set");
         return;
       }
       examples      = TableParameter();
       examplesIndex = 1;
-      savedLine     = currentLine;
+      savedLine     = currentLine + 1;
       currentLine   = outline.start;
       endLine       = currentLine + outline.length;
-      ChangeTo(State.Examples);
+      builder.AppendLine();
     }
     private void ExamplesRunComplete() {
       if (++examplesIndex >= examples.Length) {
         currentLine = savedLine;
-        ChangeTo(State.Scenario);
+        ChangeTo(State.Feature);
       } else { // next example row
-        currentLine = outline.start;
-        endLine     = currentLine + outline.length;
+        currentLine = outline.start + 1;
+        endLine     = currentLine   + outline.length;
+        builder.AppendLine();
       }
     }
     private string FillOutlineTemplate() {
@@ -379,7 +394,7 @@ namespace Askowl.Gherkin {
 
     private void Error(string message) {
       builder.AppendLine($"{currentStatement.indent}<color=red>^^^^^^ {message} ^^^^^^</color>");
-      Success = false;
+      ErrorMessage = message;
     }
 
     private void PrintLine(GherkinStatement statement, string text = null) {
@@ -421,7 +436,7 @@ namespace Askowl.Gherkin {
       var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label)).Do(
         _ => {
           Debug.Log(definitions.Output);
-          Assert.IsTrue(definitions.Success, "Failure in this Gherkin feature file");
+          Assert.IsTrue(definitions.Success, definitions.ErrorMessage);
         });
       fiber.Context(definitions);
       return fiber;

@@ -18,6 +18,9 @@ namespace Askowl.BDD.Examples {
     [UnityTest] public IEnumerator DocString() {
       yield return Feature.Go("ExampleDefinitions", "FeatureDocString").AsCoroutine();
     }
+    [UnityTest] public IEnumerator Background() {
+      yield return Feature.Go("ExampleDefinitions", "FeatureBackground").AsCoroutine();
+    }
 
     private string wordToGuess;
 
@@ -57,6 +60,14 @@ namespace Askowl.BDD.Examples {
     private bool posted;
 
     [Step(@"^it is visible as html$")] public void ItIsVisible() => Assert.IsTrue(posted);
+
+    [Step(@"^there are (\d+) ninjas$")]               public void HowManyNinjas(string[] matches) { }
+    [Step(@"^there are more than one ninjas alive$")] public void MoreThanOneNinja()              { }
+    [Step(@"^2 ninjas meet, they will fight$")]       public void NinjasMeet()                    { }
+    [Step(@"^one ninja dies \(but not me\)$")]        public void NinjaDies()                     { }
+    [Step(@"^there is one ninja less alive$")]        public void OneNinjaLess()                  { }
+    [Step(@"^there is only 1 ninja alive$")]          public void OneNinjaLeft()                  { }
+    [Step(@"^he \(or she\) will live forever ;-\)$")] public void LiveForever()                   { }
   }
 }
 #endif
