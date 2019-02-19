@@ -175,9 +175,7 @@ namespace Askowl.Gherkin {
       currentLine  = 0;
       currentState = State.Feature;
       endLine      = -1;
-      return Fiber.Start.OnError(
-                     message => Debug.Log($"*** ErrorMessage {GetInstanceID()}: '{ErrorMessage = message}]"))
-                  .Begin
+      return Fiber.Start.OnError(Error).Begin
                   .WaitFor(
                      fiber => {
                        do {
@@ -214,12 +212,6 @@ namespace Askowl.Gherkin {
                              PrintLine(statement);
                              if ((currentState != State.Scenario) && (currentState != State.Examples)) break;
                              var emitter = RunStep(statement);
-                             emitter?.Listen(
-                               _ => {
-                                 Debug.Log($"*** Process DONE '{statement}'"); //#DM#//
-                                 _.StopListening();
-                               });
-                             if (emitter != null) Debug.Log($"*** Process '{emitter}' -> {statement}"); //#DM#//
                              if (emitter != null) return emitter;
                              break;
 
