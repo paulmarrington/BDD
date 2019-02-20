@@ -87,15 +87,16 @@ namespace Askowl.Gherkin {
     private          int                    currentLine, savedLine, endLine, examplesIndex;
     private          GherkinStatement       currentStatement;
     private          State                  currentState;
-    private          RangeInt               background,   outline;
-    private          string                 activeLabels, labelToProcess;
+    private          RangeInt               background, outline;
+    private          string                 labelToProcess;
+    private          string[]               activeLabels;
     private          string[][]             examples;
     #endregion
 
     /// <a href=""></a> //#TBD#//
     public Fiber Run(string featureFileName, string label) {
       labelToProcess = label;
-      activeLabels   = "";
+      activeLabels   = new string[0];
       builder.Clear();
       ErrorMessage           = null;
       Assert.raiseExceptions = true;
@@ -233,7 +234,7 @@ namespace Askowl.Gherkin {
 
                            case Vocabulary.Keywords.Tag:
                              PrintBaseLine("brown");
-                             activeLabels = gherkinStatements[currentLine].statement;
+                             activeLabels = gherkinStatements[currentLine].statement.Split();
                              break;
 
                            case Vocabulary.Keywords.Comments:
