@@ -82,22 +82,20 @@ namespace Askowl.Gherkin {
       public override string                 ToString() => $"{keyword} ({type}): {statement}";
     }
     private enum State { Feature, Scenario, Background, Outline, Examples }
-    private          List<GherkinStatement> gherkinStatements;
-    private readonly StringBuilder          builder = new StringBuilder();
-    private          int                    currentLine, savedLine, endLine, examplesIndex;
-    private          GherkinStatement       currentStatement;
-    private          State                  currentState;
-    private          RangeInt               background, outline;
-    private          string                 labelToProcess;
-    private          string[]               activeLabels;
-    private          string[][]             examples;
+    private List<GherkinStatement> gherkinStatements;
+    private int                    currentLine, savedLine, endLine, examplesIndex;
+    private GherkinStatement       currentStatement;
+    private State                  currentState;
+    private RangeInt               background, outline;
+    private string                 labelToProcess;
+    private string[]               activeLabels;
+    private string[][]             examples;
     #endregion
 
     /// <a href=""></a> //#TBD#//
     public Fiber Run(string featureFileName, string label) {
-      labelToProcess = label;
-      activeLabels   = new string[0];
-      builder.Clear();
+      labelToProcess         = label;
+      activeLabels           = new string[0];
       ErrorMessage           = null;
       Assert.raiseExceptions = true;
       var filePath = Objects.FindFile($"{featureFileName}.feature");
@@ -141,10 +139,7 @@ namespace Askowl.Gherkin {
             }
           }
         }
-      } catch (Exception e) {
-        builder.Append("\n<color=red>").Append(e).Append("</color>\n");
-        ErrorMessage = e.ToString();
-      }
+      } catch (Exception e) { Error(e); }
       return Success;
     }
     private string DropSpaces(string text) {
@@ -285,7 +280,7 @@ namespace Askowl.Gherkin {
       savedLine     = currentLine + 1;
       currentLine   = outline.start;
       endLine       = currentLine + outline.length;
-      builder.AppendLine();
+      Log("");
     }
     private void ExamplesRunComplete() {
       if (++examplesIndex >= examples.Length) {
@@ -294,7 +289,7 @@ namespace Askowl.Gherkin {
       } else { // next example row
         currentLine = outline.start + 1;
         endLine     = currentLine   + outline.length;
-        builder.AppendLine();
+        Log("");
       }
     }
     private string FillOutlineTemplate() {
@@ -308,7 +303,7 @@ namespace Askowl.Gherkin {
 
     #region Running a Step
     private Emitter RunStep(string statement = null) {
-      if (!isInLabelledSection) return null;
+      if (!IsInLabelledSection) return null;
       if (statement == null) statement = currentStatement.statement;
       for (int i = 0; i < definitionList.Count; i++) {
         var match = definitionList[i].regex.Match(statement);
@@ -316,9 +311,7 @@ namespace Askowl.Gherkin {
           try {
             var parameters = InferParameters(definitionList[i], match);
             return definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters) as Emitter;
-          } catch (Exception e) {
-            Error(e.ToString());
-          }
+          } catch (Exception e) { Error(e); }
         }
       }
       Error("No matching definition");
@@ -340,7 +333,7 @@ namespace Askowl.Gherkin {
       }
       return parameters;
     }
-    private bool isInLabelledSection =>
+    private bool IsInLabelledSection =>
       string.IsNullOrWhiteSpace(labelToProcess) || activeLabels.Contains(labelToProcess);
 
     private string DocString() {
@@ -382,30 +375,34 @@ namespace Askowl.Gherkin {
     #endregion
 
     #region Adding to Output
-    /// <a href=""></a> //#TBD#//
-    public string Output => builder.ToString();
+    private void Log(string message) => Debug.Log($"{currentStatement.indent}{message}");
 
+    private void Error(Exception exception) {
+      var message = exception.ToString();
+      var head    = message.Substring(0, message.IndexOf(Environment.NewLine));
+      var body    = message.Substring(head.Length + 1);
+      Log($"<color=red>{head}</color>\n<color=maroon>\n{body}</color>");
+      ErrorMessage = exception.ToString();
+    }
     private void Error(string message) {
-      builder.AppendLine($"{currentStatement.indent}<color=red>^^^^^^ {message} ^^^^^^</color>");
+      Log($"<color=red>^^^^^^ {message} ^^^^^^</color>");
       ErrorMessage = message;
     }
 
     private void PrintLine(GherkinStatement statement, string text = null) {
-      if (!isInLabelledSection) return;
+      if (!IsInLabelledSection) return;
       if (text == null) text = statement.statement;
       if (statement.colon) {
-        builder.Append(statement.indent).Append("<color=maroon>").Append(statement.keyword)
-               .Append(":</color> <color=blue>").Append(text).Append("</color>\n");
+        Log($"<color=maroon>{statement.keyword}:</color> <color=blue>{text}</color>");
       } else if (!string.IsNullOrEmpty(statement.keyword)) {
-        builder.Append(statement.indent).Append("<color=blue>").Append(statement.keyword)
-               .Append("</color> ").AppendLine(text);
+        Log($"<color=blue>{statement.keyword}</color> {text}");
       }
     }
     private void PrintLine(string text = null) => PrintLine(currentStatement, text);
 
     private void PrintBaseLine(GherkinStatement statement, string colour = "black") {
-      if (!isInLabelledSection || (statement.type == Vocabulary.Keywords.Tag)) return;
-      builder.Append($"<color={colour}>").Append(statement.text).AppendLine("</color>");
+      if (!IsInLabelledSection || (statement.type == Vocabulary.Keywords.Tag)) return;
+      Log($"<color={colour}>{statement.text}</color>");
     }
     private void PrintBaseLine(string colour            = "black") => PrintBaseLine(currentLine,           colour);
     private void PrintBaseLine(int    at, string colour = "black") => PrintBaseLine(gherkinStatements[at], colour);
@@ -427,11 +424,8 @@ namespace Askowl.Gherkin {
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
       var definitions = Manager.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
-      var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label)).Do(
-        _ => {
-          Debug.Log(definitions.Output);
-          Assert.IsTrue(definitions.Success, definitions.ErrorMessage);
-        });
+      var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label))
+                       .Do(_ => Assert.IsTrue(definitions.Success, definitions.ErrorMessage));
       fiber.Context(definitions);
       return fiber;
     }
