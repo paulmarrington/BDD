@@ -422,7 +422,7 @@ namespace Askowl.Gherkin {
   public static class Feature {
     /// <a href=""></a> //#TBD#//
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
-      var definitions = Manager.Load<Definitions>($"{definitionAsset}.asset");
+      var definitions = AssetDb.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
       var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label))
                        .Do(_ => Assert.IsTrue(definitions.Success, definitions.ErrorMessage));
