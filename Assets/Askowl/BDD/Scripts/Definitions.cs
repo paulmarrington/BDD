@@ -15,7 +15,7 @@ using UnityEngine.Assertions;
 namespace Askowl.Gherkin {
   /// <a href="https://docs.cucumber.io/gherkin/reference/"></a> //#TBD#//
   [CreateAssetMenu(menuName = "BDD/Definitions", fileName = "Definitions")]
-  public class Definitions : Manager {
+  public class Definitions : Manager, IOnScriptReload {
     [SerializeField] private Vocabulary[] vocabularies       = default;
     [SerializeField] private MonoScript[] gherkinDefinitions = default;
 
@@ -379,7 +379,7 @@ namespace Askowl.Gherkin {
 
     private void Error(Exception exception) {
       var message = exception.ToString();
-      var head    = message.Substring(0, message.IndexOf(Environment.NewLine));
+      var head    = message.Substring(0, message.IndexOf(Environment.NewLine, StringComparison.Ordinal));
       var body    = message.Substring(head.Length + 1);
       Log($"<color=red>{head}</color>\n<color=maroon>\n{body}</color>");
       ErrorMessage = exception.ToString();
@@ -407,6 +407,8 @@ namespace Askowl.Gherkin {
     private void PrintBaseLine(string colour            = "black") => PrintBaseLine(currentLine,           colour);
     private void PrintBaseLine(int    at, string colour = "black") => PrintBaseLine(gherkinStatements[at], colour);
     #endregion
+
+    public void OnScriptReload() => throw new NotImplementedException();
   }
 
   /// <a href=""></a> //#TBD#//
@@ -424,8 +426,9 @@ namespace Askowl.Gherkin {
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
       var definitions = AssetDb.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
-      var fiber = Fiber.Start.WaitFor(definitions.Run(featureFile, label))
-                       .Do(_ => Assert.IsTrue(definitions.Success, definitions.ErrorMessage));
+      var fiber = Fiber.Instance.WaitFor(_ => definitions.Run(featureFile, label))
+                       .Do(_ => Assert.IsTrue(definitions.Success, definitions.ErrorMessage))
+                       .Log("<color=grey>Scenario Processing Complete</color>");
       fiber.Context(definitions);
       return fiber;
     }
