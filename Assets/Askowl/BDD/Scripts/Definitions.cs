@@ -20,9 +20,9 @@ namespace Askowl.Gherkin {
     [SerializeField] private MonoScript[] gherkinDefinitions = default;
 
     /// <a href=""></a> //#TBD#//
-    public bool Success => ErrorMessage == null;
+    public bool Success => errorMessage == null;
     /// <a href=""></a> //#TBD#//
-    [NonSerialized] public string ErrorMessage;
+    [NonSerialized] public string errorMessage;
 
     #region Initialisation
     private Vocabulary vocabulary;
@@ -96,7 +96,7 @@ namespace Askowl.Gherkin {
     public Fiber Run(string featureFileName, string label) {
       labelToProcess         = label;
       activeLabels           = new string[0];
-      ErrorMessage           = null;
+      errorMessage           = null;
       Assert.raiseExceptions = true;
       var filePath = Objects.FindFile($"{featureFileName}.feature");
       return (ReadFile(filePath)) ? Process() : null;
@@ -321,15 +321,15 @@ namespace Askowl.Gherkin {
       var parameters = new object[definition.parameters.Length];
       for (int i = 0; i < parameters.Length; i++) {
         var type = definition.parameterTypes[i];
-        if (type == typeof(string)) {
-          parameters[i] = DocString();
-        } else if (type == typeof(string[])) {
+        if (type == typeof(string[])) {
           var matches = match.Groups.OfType<Group>().Select(m => m.Value).ToList();
           matches.RemoveAt(0);
           parameters[i] = matches.ToArray();
-        } else if (type == typeof(string[][])) {
+        } else if (type == typeof(string[][]))
           parameters[i] = TableParameter(); // table
-        }
+        else if (type == typeof(string)) {
+          parameters[i] = DocString();
+        } else if (type == typeof(Definitions)) { parameters[i] = this; }
       }
       return parameters;
     }
@@ -382,11 +382,11 @@ namespace Askowl.Gherkin {
       var head    = message.Substring(0, message.IndexOf(Environment.NewLine, StringComparison.Ordinal));
       var body    = message.Substring(head.Length + 1);
       Log($"<color=red>{head}</color>\n<color=maroon>\n{body}</color>");
-      ErrorMessage = exception.ToString();
+      errorMessage = exception.ToString();
     }
     private void Error(string message) {
       Log($"<color=red>^^^^^^ {message} ^^^^^^</color>");
-      ErrorMessage = message;
+      errorMessage = message;
     }
 
     private void PrintLine(GherkinStatement statement, string text = null) {
@@ -427,7 +427,7 @@ namespace Askowl.Gherkin {
       var definitions = AssetDb.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
       var fiber = Fiber.Instance.WaitFor(_ => definitions.Run(featureFile, label))
-                       .Do(_ => Assert.IsTrue(definitions.Success, definitions.ErrorMessage))
+                       .Do(_ => Assert.IsTrue(definitions.Success, definitions.errorMessage))
                        .Log("<color=grey>Scenario Processing Complete</color>");
       fiber.Context(definitions);
       return fiber;
