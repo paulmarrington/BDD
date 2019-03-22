@@ -244,6 +244,7 @@ namespace Askowl.Gherkin {
                        } while (++currentLine < gherkinStatements.Count);
                        return null;
                      })
+                  .Log("Before Until")
                   .Until(_ => ++currentLine >= gherkinStatements.Count);
     }
 
@@ -426,7 +427,8 @@ namespace Askowl.Gherkin {
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
       var definitions = AssetDb.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
-      var fiber = Fiber.Instance.WaitFor(_ => definitions.Run(featureFile, label))
+      var fiber = Fiber.Instance
+                       .WaitFor(_ => definitions.Run(featureFile, label))
                        .Do(_ => Assert.IsTrue(definitions.Success, definitions.errorMessage))
                        .Log("<color=grey>Scenario Processing Complete</color>");
       fiber.Context(definitions);
