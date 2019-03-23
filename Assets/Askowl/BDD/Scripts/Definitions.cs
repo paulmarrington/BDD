@@ -244,7 +244,6 @@ namespace Askowl.Gherkin {
                        } while (++currentLine < gherkinStatements.Count);
                        return null;
                      })
-                  .Log("Before Until")
                   .Until(_ => ++currentLine >= gherkinStatements.Count);
     }
 
