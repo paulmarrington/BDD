@@ -12,11 +12,13 @@ public class Vocabulary : Base {
   [SerializeField] private string[] background      = default;
   [SerializeField] private string[] scenarioOutline = default;
   [SerializeField] private string[] examples        = default;
+  [SerializeField] private string[] askAndTell      = default;
 
   /// <a href=""></a> //#TBD#//
   public enum Keywords {
     // ReSharper disable MissingXmlDoc
-    Feature, Rule, Scenario, Step, Background, ScenarioOutline, Examples, DocString, DataTable, Tag, Comments, Unknown
+    Feature, Rule, Scenario, Step, Background, ScenarioOutline
+  , Examples, DocString, DataTable, Tag, Comments, Ask, Unknown
     // ReSharper restore MissingXmlDoc
   }
 
@@ -37,14 +39,12 @@ public class Vocabulary : Base {
     add(background,      Keywords.Background);
     add(scenarioOutline, Keywords.ScenarioOutline);
     add(examples,        Keywords.Examples);
+    add(askAndTell,      Keywords.Ask);
   }
 
   /// <a href=""></a> //#TBD#//
   public void Merge(Vocabulary other) => other.keywords.ToList().ForEach(x => keywords.Add(x.Key, x.Value));
 
   /// <a href=""></a> //#TBD#//
-  public Keywords Keyword(string word) {
-    if (string.IsNullOrWhiteSpace(word)) return Keywords.Unknown;
-    return keywords.ContainsKey(word) ? keywords[word] : Keywords.Unknown;
-  }
+  public Keywords Keyword(string word) { return keywords.ContainsKey(word) ? keywords[word] : Keywords.Unknown; }
 }

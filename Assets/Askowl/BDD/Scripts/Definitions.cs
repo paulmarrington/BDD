@@ -111,7 +111,7 @@ namespace Askowl.Gherkin {
           bool             inDocString   = false;
           GherkinStatement lastStatement = new GherkinStatement();
           while ((text = file.ReadLine()) != null) {
-            var match = gherkinRegex.Match(DropSpaces(text));
+            var match = gherkinRegex.Match(DropSpacesOrSubCommand(text));
             var statement = new GherkinStatement {
               keyword = match.Groups[2].Value, statement = match.Groups[4].Value
             , indent  = match.Groups[1].Value, colon     = match.Groups[3].Length != 0
@@ -142,13 +142,18 @@ namespace Askowl.Gherkin {
       } catch (Exception e) { Error(e); }
       return Success;
     }
-    private string DropSpaces(string text) {
-      var match               = dropSpaceRegex.Match((text));
-      if (match.Success) text = match.Groups[1].Value + match.Groups[2].Value;
+    private string DropSpacesOrSubCommand(string text) {
+      var match = dropSpaceRegex.Match(text);
+      if (match.Success)
+        if ((vocabulary.Keyword(match.Groups[2].Value) == Vocabulary.Keywords.Step)
+         && (vocabulary.Keyword(match.Groups[3].Value) != Vocabulary.Keywords.Unknown))
+          text = match.Groups[1].Value + match.Groups[3].Value + " " + match.Groups[4].Value;
+        else
+          text = match.Groups[1].Value + match.Groups[2].Value + match.Groups[3].Value + match.Groups[4].Value;
       return text;
     }
     private static readonly Regex gherkinRegex   = new Regex(@"^(\s*)(\w*)(:?)\s*(.*)$");
-    private static readonly Regex dropSpaceRegex = new Regex(@"^(\s*\w+)\s(\w+:.*)$");
+    private static readonly Regex dropSpaceRegex = new Regex(@"^(\s*)(\w+)\s(\w+):(.*)$");
 
     private Vocabulary.Keywords GherkinSyntax(string word, string text) {
       var keyword = vocabulary.Keyword(word);
@@ -202,6 +207,10 @@ namespace Askowl.Gherkin {
                              break;
 
                            case Vocabulary.Keywords.Step:
+                             if (!Success) {
+                               PrintBaseLine("grey");
+                               break;
+                             }
                              var statement = currentState == State.Examples
                                                ? FillOutlineTemplate()
                                                : currentStatement.statement;
@@ -209,6 +218,23 @@ namespace Askowl.Gherkin {
                              if ((currentState != State.Scenario) && (currentState != State.Examples)) break;
                              var emitter = RunStep(statement);
                              if (emitter != null) return emitter;
+                             break;
+
+                           case Vocabulary.Keywords.Ask:
+                             if (!IsInLabelledSection) break;
+                             if (!Success) {
+                               PrintBaseLine("grey");
+                               break;
+                             }
+                             PrintLine(currentStatement.statement);
+                             var title  = currentStatement.statement;
+                             var prompt = DocString();
+                             if (prompt.Length == 0) {
+                               prompt = title;
+                               title  = "BDD";
+                             }
+                             if (!EditorUtility.DisplayDialog(title, prompt, "Pass", "Fail"))
+                               Error("Operator indicated step failure");
                              break;
 
                            case Vocabulary.Keywords.Background:

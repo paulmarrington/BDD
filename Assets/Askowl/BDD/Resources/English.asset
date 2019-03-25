@@ -34,3 +34,7 @@ MonoBehaviour:
   examples:
   - Scenarios
   - Examples
+  askAndTell:
+  - Ask
+  - Tell
+  - Note
