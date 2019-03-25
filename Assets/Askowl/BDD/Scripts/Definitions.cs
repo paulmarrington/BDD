@@ -221,21 +221,18 @@ namespace Askowl.Gherkin {
                              break;
 
                            case Vocabulary.Keywords.Ask:
-                             if (!IsInLabelledSection) break;
                              if (!Success) {
                                PrintBaseLine("grey");
                                break;
                              }
-                             PrintLine(currentStatement.statement);
+                             PrintLine();
                              var title  = currentStatement.statement;
                              var prompt = DocString();
                              if (prompt.Length == 0) {
                                prompt = title;
                                title  = "BDD";
                              }
-                             if (!EditorUtility.DisplayDialog(title, prompt, "Pass", "Fail"))
-                               Error("Operator indicated step failure");
-                             break;
+                             return Ask(title, prompt, "Pass", "Fail");
 
                            case Vocabulary.Keywords.Background:
                              PrintLine();
@@ -272,6 +269,15 @@ namespace Askowl.Gherkin {
                      })
                   .Until(_ => ++currentLine >= gherkinStatements.Count);
     }
+    private Emitter Ask(string title, string prompt, string pass, string fail) {
+      var emitter = Emitter.SingleFireInstance;
+      DialogWindow.Open(
+        title, prompt, pass, fail, ok => {
+          if (!ok) Error("Operator indicated step failure");
+          emitter.Fire();
+        });
+      return emitter;
+    }
 
     private void ChangeTo(State newState) {
       switch (currentState) {
@@ -306,7 +312,7 @@ namespace Askowl.Gherkin {
       savedLine     = currentLine + 1;
       currentLine   = outline.start;
       endLine       = currentLine + outline.length;
-      Log("");
+      if (IsInLabelledSection) Log("");
     }
     private void ExamplesRunComplete() {
       if (++examplesIndex >= examples.Length) {
@@ -315,7 +321,7 @@ namespace Askowl.Gherkin {
       } else { // next example row
         currentLine = outline.start + 1;
         endLine     = currentLine   + outline.length;
-        Log("");
+        if (IsInLabelledSection) Log("");
       }
     }
     private string FillOutlineTemplate() {
@@ -427,7 +433,10 @@ namespace Askowl.Gherkin {
     private void PrintLine(string text = null) => PrintLine(currentStatement, text);
 
     private void PrintBaseLine(GherkinStatement statement, string colour = "black") {
-      if (!IsInLabelledSection || (statement.type == Vocabulary.Keywords.Tag)) return;
+      if (!IsInLabelledSection
+       || (statement.type == Vocabulary.Keywords.Tag)
+       || string.IsNullOrWhiteSpace(statement.statement))
+        return;
       Log($"<color={colour}>{statement.text}</color>");
     }
     private void PrintBaseLine(string colour            = "black") => PrintBaseLine(currentLine,           colour);
