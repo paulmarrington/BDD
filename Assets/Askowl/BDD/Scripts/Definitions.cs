@@ -221,6 +221,7 @@ namespace Askowl.Gherkin {
                              break;
 
                            case Vocabulary.Keywords.Ask:
+                             if (!IsInLabelledSection) break;
                              if (!Success) {
                                PrintBaseLine("grey");
                                break;
