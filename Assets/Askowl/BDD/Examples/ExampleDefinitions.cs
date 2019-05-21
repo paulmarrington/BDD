@@ -41,7 +41,7 @@ namespace Askowl.BDD.Examples {
       Assert.AreEqual("silky", wordToGuess);
       Assert.AreEqual("5",     matches[0]);
       var emitter = Emitter.SingleFireInstance;
-      Fiber.Start.WaitFor(0.2f).Fire(emitter);
+      Fiber.Start().WaitFor(0.2f).Fire(emitter);
       return emitter;
     }
 
@@ -54,7 +54,7 @@ namespace Askowl.BDD.Examples {
     [Step(@"^posted$")] public Emitter Posted() {
       var emitter = Emitter.SingleFireInstance.Context("Posted");
       posted = false;
-      Fiber.Start.WaitFor(0.3f).Do(_ => posted = true).Fire(emitter);
+      Fiber.Start().WaitFor(0.3f).Do(_ => posted = true).Fire(emitter);
       return emitter;
     }
     private bool posted;

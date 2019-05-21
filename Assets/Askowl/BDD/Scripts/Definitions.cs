@@ -19,9 +19,8 @@ namespace Askowl.Gherkin {
     [SerializeField] private Vocabulary[] vocabularies       = default;
     [SerializeField] private MonoScript[] gherkinDefinitions = default;
 
-    /// <a href=""></a> //#TBD#//
     public bool Success => errorMessage == null;
-    /// <a href=""></a> //#TBD#//
+
     [NonSerialized] public string errorMessage;
 
     #region Initialisation
@@ -35,11 +34,6 @@ namespace Askowl.Gherkin {
       public Type[]          parameterTypes;
     }
     private readonly List<Definition> definitionList = new List<Definition>();
-
-    protected override void OnEnable() {
-      LoadDefinitions();
-      LoadVocabularies();
-    }
 
     private void LoadDefinitions() { // Iterate through all the methods of the class.
       base.OnEnable();
@@ -94,6 +88,8 @@ namespace Askowl.Gherkin {
 
     /// <a href=""></a> //#TBD#//
     public Fiber Run(string featureFileName, string label) {
+      LoadDefinitions();
+      LoadVocabularies();
       labelToProcess         = label;
       activeLabels           = new string[0];
       errorMessage           = null;
@@ -176,7 +172,7 @@ namespace Askowl.Gherkin {
       currentLine  = 0;
       currentState = State.Feature;
       endLine      = -1;
-      return Fiber.Start.OnError(Error).Begin
+      return Fiber.Start("Gherkin").OnError(Error).Begin
                   .WaitFor(
                      fiber => {
                        do {
@@ -344,7 +340,10 @@ namespace Askowl.Gherkin {
           try {
             var parameters = InferParameters(definitionList[i], match);
             return definitionList[i].methodInfo.Invoke(definitionList[i].container, parameters) as Emitter;
-          } catch (Exception e) { Error(e); }
+          } catch (Exception e) {
+            Error(e);
+            return null;
+          }
         }
       }
       Error("No matching definition");
@@ -417,8 +416,13 @@ namespace Askowl.Gherkin {
       Log($"<color=red>{head}</color>\n<color=maroon>\n{body}</color>");
       errorMessage = exception.ToString();
     }
-    private void Error(string message) {
-      Log($"<color=red>^^^^^^ {message} ^^^^^^</color>");
+
+    public void Error(string message) {
+      var lf = message.IndexOf("\n", StringComparison.Ordinal);
+      if (lf == -1)
+        Log($"<color=red>^^^^^^ {message} ^^^^^^</color>");
+      else
+        Log($"<color=red>^^^^^^ {message.Substring(0, lf)} ^^^^^^</color>{message.Substring(lf)}");
       errorMessage = message;
     }
 
@@ -447,22 +451,18 @@ namespace Askowl.Gherkin {
     public void OnScriptReload() => throw new NotImplementedException();
   }
 
-  /// <a href=""></a> //#TBD#//
   [AttributeUsage(AttributeTargets.Method)] public class StepAttribute : Attribute {
     private readonly Regex regex;
     public StepAttribute(string definition) => regex = new Regex(definition);
 
-    /// <a href=""></a> //#TBD#//
     public Regex Definition => regex;
   }
 
-  /// <a href=""></a> //#TBD#//
   public static class Feature {
-    /// <a href=""></a> //#TBD#//
     public static Fiber Go(string definitionAsset, string featureFile, string label = "") {
       var definitions = AssetDb.Load<Definitions>($"{definitionAsset}.asset");
       Assert.IsNotNull(definitions, $"Gherkin definitions asset '{definitionAsset}' not found");
-      var fiber = Fiber.Instance
+      var fiber = Fiber.Instance()
                        .WaitFor(_ => definitions.Run(featureFile, label))
                        .Do(_ => Assert.IsTrue(definitions.Success, definitions.errorMessage))
                        .Log("<color=grey>Scenario Processing Complete</color>");
